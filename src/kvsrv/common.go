@@ -1,5 +1,14 @@
 package kvsrv
 
+// Client ID request
+type ClientIDArgs struct {
+	Retry bool
+}
+
+type ClientIDReply struct {
+	ClientID int
+}
+
 // Put or Append
 type PutAppendArgs struct {
 	Key   string
@@ -7,6 +16,9 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	ClientID int
+	PutAppendReqID int
+	Retry bool
 }
 
 type PutAppendReply struct {

@@ -1,19 +1,22 @@
 package kvsrv
 
-import "6.5840/labrpc"
-import "testing"
-import "os"
+import (
+	"os"
+	"testing"
 
-//import "log"
-import crand "crypto/rand"
-import "math/big"
-import "math/rand"
-import "encoding/base64"
-import "sync"
-import "runtime"
-import "fmt"
-import "time"
-import "sync/atomic"
+	"6.5840/labrpc"
+
+	//import "log"
+	crand "crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"math/big"
+	"math/rand"
+	"runtime"
+	"sync"
+	"sync/atomic"
+	"time"
+)
 
 const SERVERID = 0
 
@@ -49,7 +52,7 @@ type config struct {
 func (cfg *config) checkTimeout() {
 	// enforce a two minute real-time limit on each test
 	if !cfg.t.Failed() && time.Since(cfg.start) > 120*time.Second {
-		cfg.t.Fatal("test took longer than 120 seconds")
+		cfg.t.Fatalf("test took longer than 120 seconds, %v", time.Since(cfg.start))
 	}
 }
 
@@ -74,6 +77,7 @@ func (cfg *config) makeClient() *Clerk {
 	cfg.clerks[ck] = endname
 	cfg.nextClientId++
 	cfg.ConnectClientUnlocked(ck)
+	ck.GetClientID()
 	return ck
 }
 
