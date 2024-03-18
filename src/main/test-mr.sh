@@ -5,7 +5,7 @@
 #
 
 # un-comment this to run the tests with the Go race detector.
-# RACE=-race
+RACE=-race
 
 if [[ "$OSTYPE" = "darwin"* ]]
 then
@@ -58,6 +58,7 @@ cd mr-tmp || exit 1
 rm -f mr-*
 
 # make sure software is freshly built.
+echo "building apps"
 (cd ../../mrapps && go clean)
 (cd .. && go clean)
 (cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
