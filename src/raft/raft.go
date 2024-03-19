@@ -19,6 +19,9 @@ package raft
 
 import (
 	//	"bytes"
+
+	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -27,7 +30,6 @@ import (
 	//	"6.5840/labgob"
 	"6.5840/labrpc"
 )
-
 
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -50,6 +52,19 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+type State int
+
+const (
+	leader State = iota
+	follower State = iota
+	candidate State = iota
+)
+
+type LogEntry struct {
+	Term int
+	Command interface{}
+}
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -61,7 +76,27 @@ type Raft struct {
 	// Your data here (3A, 3B, 3C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+	// Server state
+	state State
 
+	// Persistent state on all servers
+	currentTerm int
+	votedFor    int
+	log		 []LogEntry
+
+	// Volatile state on all servers
+	commitIndex int
+	lastApplied int
+
+	// Volatile state on leaders
+	nextIndex []int
+	matchIndex []int
+
+	// Channel
+	applyCh chan ApplyMsg
+
+	// timers
+	lastHeartbeat time.Time
 }
 
 // return currentTerm and whether this server
@@ -71,6 +106,11 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (3A).
+	rf.mu.Lock()
+	term = rf.currentTerm
+	isleader = rf.state == leader
+	rf.mu.Unlock()
+	DPrintf("Server %v (Term: %v) GetState: %v", rf.me, term, isleader)
 	return term, isleader
 }
 
@@ -128,17 +168,68 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // field names must start with capital letters!
 type RequestVoteArgs struct {
 	// Your data here (3A, 3B).
+	Term int
+	CandidateId int
 }
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 type RequestVoteReply struct {
 	// Your data here (3A).
+	Term int
+	VoteGranted bool
+}
+
+func (rf *Raft) isLogUpToDate(index int, term int) bool {
+	lastLogIndex := len(rf.log) - 1
+	lastLogTerm := rf.log[lastLogIndex].Term
+	return term > lastLogTerm || (term == lastLogTerm && index >= lastLogIndex)
 }
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (3A, 3B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	DPrintf("Server %v (Term: %v) received RequestVote from %v, rf.votedFor: %v", rf.me, rf.currentTerm, args, rf.votedFor)
+	if (args.Term < rf.currentTerm) || (args.Term == rf.currentTerm && rf.votedFor != -1 && rf.votedFor != args.CandidateId && rf.votedFor != rf.me) {
+		// if request is old or we have voted for other candidate
+		reply.Term, reply.VoteGranted = rf.currentTerm, false
+		return
+	} else if args.Term > rf.currentTerm {
+		// if we are outdated
+		rf.currentTerm, rf.votedFor = args.Term, -1
+	}
+	// grant the vote
+	DPrintf("Server %v (Term: %v) voted for %v", rf.me, rf.currentTerm, args.CandidateId)
+	rf.votedFor = args.CandidateId
+	reply.Term, reply.VoteGranted = rf.currentTerm, true
+	rf.stateChange(follower)
+}
+
+type HeartBeatArgs struct {
+	Term int
+	LeaderId int
+}
+
+type HeartBeatReply struct {
+	Term int
+	Alive bool
+}
+
+func (rf *Raft) HeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	DPrintf("Server %v (Term: %v) received HeartBeat from %v", rf.me, rf.currentTerm, args.LeaderId)
+	if args.Term < rf.currentTerm {
+		// if request is old
+		reply.Term, reply.Alive = rf.currentTerm, false
+		return
+	}
+	// listen to heart beat
+	rf.stateChange(follower)
+	rf.resetTimer()
+	reply.Term, reply.Alive = rf.currentTerm, true
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -171,6 +262,93 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
+}
+
+func (rf *Raft) sendHeartBeat(server int, args *HeartBeatArgs, reply *HeartBeatReply) bool {
+	ok := rf.peers[server].Call("Raft.HeartBeat", args, reply)
+	return ok
+}
+
+// shall be called within lock: at least we can promise that the state is not changed until all goroutines launchedd
+// broadcast requestvote to all peers
+func (rf *Raft) broadcastRequestVote() {
+	DPrintf("Server %v (Term: %v) broadcast RequestVote", rf.me, rf.currentTerm)
+	if rf.state != candidate {
+		fmt.Printf("Invalid state for broadcastRequestVote: %v\n", rf.state)
+		return
+	}
+	args := &RequestVoteArgs{
+		Term: rf.currentTerm,
+		CandidateId: rf.me,
+	}
+	// votes counter, including itself
+	receivedVotes := 1
+	for i := range rf.peers {
+		if i != rf.me {
+			// send to all other peers
+			go func (peer int) {
+				reply := &RequestVoteReply{}
+				if rf.sendRequestVote(peer, args, reply) {
+					rf.mu.Lock()
+					defer rf.mu.Unlock()
+					if rf.currentTerm == args.Term {
+						// make sure request valid
+						if reply.VoteGranted {
+							// someone vote us
+							receivedVotes++
+							DPrintf("Server %v (Term: %v) received vote from %v, receivedVotes: %v", rf.me, rf.currentTerm, peer, receivedVotes)
+							if receivedVotes > len(rf.peers) / 2 {
+								rf.stateChange(leader)
+							}
+						} else {
+							// someone newer than us
+							if reply.Term > rf.currentTerm {
+								rf.currentTerm, rf.votedFor = reply.Term, -1
+								rf.stateChange(follower)
+							}
+						}
+					}
+				}
+			} (i)
+		}
+	}
+}
+
+// shall be called within lock: at least we can promise that the state is not changed until all goroutines launchedd
+// broadcast heartbeat to all peers
+func (rf *Raft) broadcastHeartBeat() {
+	DPrintf("Server %v (Term: %v) broadcast HeartBeat", rf.me, rf.currentTerm)
+	if rf.state != leader {
+		fmt.Printf("Server %v (Term: %v) Invalid state for broadcastHeartBeat: %v\n", rf.me, rf.currentTerm, rf.state)
+		return
+	}
+	args := &HeartBeatArgs{
+		Term: rf.currentTerm,
+		LeaderId: rf.me,
+	}
+	for i := range rf.peers {
+		if i != rf.me {
+			go func (peer int) {
+				reply := &HeartBeatReply{}
+				if rf.sendHeartBeat(peer, args, reply) {
+					rf.mu.Lock()
+					defer rf.mu.Unlock()
+					if rf.currentTerm == args.Term {
+						if reply.Alive {
+							// someone is alive
+						} else {
+							// someone has a higher term
+							if reply.Term > rf.currentTerm {
+								DPrintf("Server %v (Term: %v) received higher term from %v (Term: %v)", rf.me, rf.currentTerm, peer, reply.Term)
+								rf.currentTerm, rf.votedFor = reply.Term, -1
+								rf.stateChange(follower)
+							}
+						}
+					}
+				}
+			} (i)
+		}
+	}
 }
 
 
@@ -216,12 +394,83 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
+// shall be called within lock
+// reset the channels, needed when converting server state.
+func (rf *Raft) resetChannels() {
+	rf.applyCh = make(chan ApplyMsg)
+}
+
+// shall be called within lock
+func (rf *Raft) stateChange(newState State) {
+	rf.resetTimer()
+	DPrintf("Server %v (Term: %v) state change from %v to %v", rf.me, rf.currentTerm, rf.state, newState)
+	if rf.state == newState {
+		// no change
+		return
+	}
+	if newState == leader {
+		// if we become leader
+		if rf.state != candidate {
+			log.Fatalf("Invalid state change to leader from %v", rf.state)
+		}
+		rf.resetChannels()
+		rf.state = leader
+		rf.nextIndex = make([]int, len(rf.peers))
+		rf.matchIndex = make([]int, len(rf.peers))
+		newIndex := len(rf.log)
+		for i := range rf.peers {
+			rf.nextIndex[i] = newIndex
+			rf.matchIndex[i] = 0
+		}
+	} else if newState == candidate {
+		// if we become candidate
+		if rf.state != follower {
+			log.Fatalf("Invalid state change to candidate from %v", rf.state)
+		}
+		rf.state = candidate
+		rf.currentTerm++
+		rf.votedFor = rf.me
+		rf.resetChannels()
+	} else {
+		// if we become follower
+		rf.state = follower
+		rf.votedFor = -1
+	}
+}
+
+func (rf *Raft) resetTimer() {
+	rf.lastHeartbeat = time.Now()
+}
+
 func (rf *Raft) ticker() {
 	for rf.killed() == false {
-
 		// Your code here (3A)
 		// Check if a leader election should be started.
-
+		rf.mu.Lock()
+		if rf.state == follower {
+			// if the server is follower
+			if time.Now().Sub(rf.lastHeartbeat) > time.Duration(1000) * time.Millisecond {
+				// we shall detect the time gap since we receive leader's last heartbeat, too long means the leader is dead, we should start an election
+				DPrintf("Server %v (Term: %v) is now a candidate, duration: %v", rf.me, rf.currentTerm, time.Now().Sub(rf.lastHeartbeat))
+				rf.stateChange(candidate)
+				rf.resetTimer()
+				rf.broadcastRequestVote()
+			}
+		} else if rf.state == leader {
+			// if the server is leader, broadcast heartbeat time by time
+			rf.broadcastHeartBeat()
+		} else {
+			// Way 1:
+			// if the server is candidate but disconnected, when it come back it should return to normal state
+			// successfully
+			// rf.stateChange(follower)
+			// rf.resetTimer()
+			// Way 2:
+			// if the server is candidate but disconnected, when it come back it should continue the election
+			rf.resetTimer()
+			rf.broadcastRequestVote()
+		}
+		rf.mu.Unlock()
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
@@ -247,6 +496,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (3A, 3B, 3C).
+	rf.applyCh = applyCh
+	rf.state = follower
+	rf.currentTerm = 0
+	rf.votedFor = -1
+	rf.log = make([]LogEntry, 0)
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+	rf.nextIndex = make([]int, len(peers))
+	rf.matchIndex = make([]int, len(peers))
+	rf.resetTimer()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
