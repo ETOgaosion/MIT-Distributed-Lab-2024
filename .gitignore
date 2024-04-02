@@ -8,3 +8,4 @@ api.key
 mr-*
 *.json
 *.txt
+.check-build
