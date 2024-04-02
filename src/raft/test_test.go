@@ -135,6 +135,7 @@ func TestBasicAgree3B(t *testing.T) {
 	iters := 3
 	for index := 1; index < iters+1; index++ {
 		nd, _ := cfg.nCommitted(index)
+		fmt.Printf("nd: %v\n", nd)
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")
 		}
@@ -279,6 +280,7 @@ func TestFailAgree3B(t *testing.T) {
 
 	// disconnect one follower from the network.
 	leader := cfg.checkOneLeader()
+	fmt.Printf("leader: %v\n", leader)
 	cfg.disconnect((leader + 1) % servers)
 
 	// the leader and remaining follower should be
@@ -466,6 +468,7 @@ func TestRejoin3B(t *testing.T) {
 	// leader network failure
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
+	fmt.Printf("leader1: %v\n", leader1)
 
 	// make old leader try to agree on some entries
 	cfg.rafts[leader1].Start(102)
@@ -478,8 +481,10 @@ func TestRejoin3B(t *testing.T) {
 	// new leader network failure
 	leader2 := cfg.checkOneLeader()
 	cfg.disconnect(leader2)
+	fmt.Printf("leader2: %v\n", leader2)
 
 	// old leader connected again
+	fmt.Printf("connect: %v\n", leader1)
 	cfg.connect(leader1)
 
 	cfg.one(104, 2, true)
