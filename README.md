@@ -15,7 +15,8 @@ This repo is based on [MIT Spring 2024 Course and Lab](https://pdos.csail.mit.ed
     - [x] **Lab3B: log(*H*)**
         - Not so hard, but very complicated, you'd better understand the algorithm through running test, rather than refer to different versions of others' codes, they can be confusing
         - It cost me a lot of time to debug and understand the algorithm, corner cases
-    - [ ] Lab3C: persistence
+    - [x] Lab3C: persistence(*SS*)
+        - `TestFigure83C`/`TestFigure8Unreliable3C` cannot pass within 30s timeout
     - [ ] Lab3D: log compaction
 
 
