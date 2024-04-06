@@ -22,6 +22,7 @@ package raft
 import (
 	//	"bytes"
 
+	"bytes"
 	"fmt"
 	"log"
 	"math/rand"
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -114,7 +116,6 @@ func (rf *Raft) resetTimer() {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
 	var term int
 	var isleader bool
 	// Your code here (3A).
@@ -195,6 +196,14 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// raftstate := w.Bytes()
 	// rf.persister.Save(raftstate, nil)
+
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	raftstate := w.Bytes()
+	rf.persister.Save(raftstate, nil)
 }
 
 
@@ -216,6 +225,19 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var currentTermRd int
+	var votedForRd int
+	var logRd []LogEntry
+	if d.Decode(&currentTermRd) != nil || d.Decode(&votedForRd) != nil || d.Decode(&logRd) != nil {
+		log.Fatalf("Server %v (Term: %v) readPersist error", rf.me, rf.currentTerm)
+	} else {
+		rf.currentTerm = currentTermRd
+		rf.votedFor = votedForRd
+		rf.log = logRd
+	}
 }
 
 
@@ -262,12 +284,13 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		// if request is old or we have voted for other candidate
 		reply.Term, reply.VoteGranted = rf.currentTerm, false
 		return
-	} else if args.Term > rf.currentTerm {
+	} else if args.Term > rf.currentTerm && rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm) {
 		// if we are outdated
 		rf.currentTerm, rf.votedFor = args.Term, -1
 	} else if rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm) == false {
 		// if log is not up to date
 		reply.Term, reply.VoteGranted = rf.currentTerm, false
+		DPrintf("Server %v (Term: %v) refuse voted for %v", rf.me, rf.currentTerm, args.CandidateId)
 		return
 	}
 	// grant the vote
@@ -275,6 +298,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.votedFor = args.CandidateId
 	reply.Term, reply.VoteGranted = rf.currentTerm, true
 	rf.stateChange(follower)
+	rf.persist()
 }
 
 // AppendEntries RPC arguments structure.
@@ -306,6 +330,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Term > rf.currentTerm {
 		// if we are outdated
 		rf.currentTerm, rf.votedFor = args.Term, -1
+		rf.persist()
 	}
 	rf.stateChange(follower)
 
@@ -339,6 +364,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.commitIndex = min(args.LeaderCommit, rf.getLastLogIndex())
 		rf.applyCond.Signal()
 	}
+	rf.persist()
 }
 
 // ========================== RPC Callers ============================
@@ -421,6 +447,7 @@ func (rf *Raft) broadcastRequestVote() {
 							if reply.Term > rf.currentTerm {
 								rf.currentTerm, rf.votedFor = reply.Term, -1
 								rf.stateChange(follower)
+								rf.persist()
 							}
 						}
 					}
@@ -461,6 +488,7 @@ func (rf *Raft) broadcastHeartBeat() {
 						if reply.Term > rf.currentTerm {
 							rf.currentTerm, rf.votedFor = reply.Term, -1
 							rf.stateChange(follower)
+							rf.persist()
 						} else {
 							if reply.Success {
 								if len(args.Entries) > 0 {
@@ -512,6 +540,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		term = rf.currentTerm
 		index = rf.getLastLogIndex() + 1
 		rf.log = append(rf.log, LogEntry{Index: index, Term: term, Command: command})
+		rf.persist()
 	}
 
 	return index, term, isLeader
@@ -567,10 +596,12 @@ func (rf *Raft) stateChange(newState State) {
 		rf.state = candidate
 		rf.currentTerm++
 		rf.votedFor = rf.me
+		rf.persist()
 	} else {
 		// if we become follower
 		rf.state = follower
 		rf.votedFor = -1
+		rf.persist()
 	}
 }
 
@@ -591,7 +622,7 @@ func (rf *Raft) ticker() {
 				rf.broadcastRequestVote()
 			}
 		} else if rf.state == leader {
-			// if the server is leader, broadcast heartbeat time by timex
+			// if the server is leader, broadcast heartbeat time by time
 			rf.broadcastHeartBeat()
 		} else {
 			if time.Now().Sub(rf.lastHeartbeat) > time.Duration(500 + (rand.Int63() % 300)) * time.Millisecond {
@@ -615,7 +646,6 @@ func (rf *Raft) ticker() {
 	}
 }
 
-// can be launch as go routine
 func (rf *Raft) applyLog() {
 	for rf.killed() == false {
 		rf.mu.Lock()
