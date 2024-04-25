@@ -25,7 +25,8 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
                 - it means that `applyCh` is not the one `config.go` set up, note that `applierSnap` check the `rafts[i]` before check `applyCh` outputs
             - `readPersist` must reload `lastApplied`/`commitIndex` from `lastIncludedIndexRd` or new added server would get error to find the `lastApplied + 1` index
             - We cannot compact the log actively by running a go routine, older tests not support such Snapshot mechanism, see the conception above
-
+- Lab4: Fault tolerance Key/Value Service
+    - [Client Linear RPC Specification](https://web.stanford.edu/~ouster/cgi-bin/papers/OngaroPhD.pdf), Page 67
 
 Evaluation Level:
 

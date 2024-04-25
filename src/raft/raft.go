@@ -86,6 +86,7 @@ type Raft struct {
 
 	// Persistent state on all servers
 	currentTerm int
+	currentLeader int	// for Lab4: decrease trials to find actual leader
 	votedFor    int
 	log		 []LogEntry
 	lastIncludedIndex int
@@ -128,6 +129,12 @@ func (rf *Raft) GetState() (int, bool) {
 	isleader = rf.state == leader
 	rf.mu.Unlock()
 	return term, isleader
+}
+
+func (rf *Raft) GetCurrentLeader() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.currentLeader
 }
 
 // should be in lock
@@ -325,6 +332,7 @@ type RequestVoteReply struct {
 	// Your data here (3A).
 	Term int
 	VoteGranted bool
+	CurrentLeader int
 }
 
 // example RequestVote RPC handler.
@@ -335,26 +343,27 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	DPrintf("Server %v (Term: %v) received RequestVote from %v, rf.votedFor: %v", rf.me, rf.currentTerm, args, rf.votedFor)
 	if rf.state == leader && rf.currentTerm >= args.Term {
 		// if we are leader, we should not vote for others
-		reply.Term, reply.VoteGranted = rf.currentTerm, false
+		reply.Term, reply.VoteGranted, reply.CurrentLeader = rf.currentTerm, false, rf.me
 		return
 	}
 	if (args.Term < rf.currentTerm) || (args.Term == rf.currentTerm && rf.votedFor != -1 && rf.votedFor != args.CandidateId && rf.votedFor != rf.me) {
 		// if request is old or we have voted for other candidate
-		reply.Term, reply.VoteGranted = rf.currentTerm, false
+		reply.Term, reply.VoteGranted, reply.CurrentLeader = rf.currentTerm, false, rf.votedFor
 		return
 	} else if args.Term > rf.currentTerm && rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm) {
 		// if we are outdated
 		rf.currentTerm, rf.votedFor = args.Term, -1
 	} else if rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm) == false {
 		// if log is not up to date
-		reply.Term, reply.VoteGranted = rf.currentTerm, false
+		reply.Term, reply.VoteGranted, reply.CurrentLeader = rf.currentTerm, false, rf.currentLeader
 		DPrintf("Server %v (Term: %v) refuse voted for %v", rf.me, rf.currentTerm, args.CandidateId)
 		return
 	}
 	// grant the vote
 	DPrintf("Server %v (Term: %v) voted for %v", rf.me, rf.currentTerm, args.CandidateId)
 	rf.votedFor = args.CandidateId
-	reply.Term, reply.VoteGranted = rf.currentTerm, true
+	rf.currentLeader = args.CandidateId
+	reply.Term, reply.VoteGranted, reply.CurrentLeader = rf.currentTerm, true, rf.votedFor
 	rf.stateChange(follower)
 	rf.persist(nil)
 }
@@ -374,6 +383,7 @@ type AppendEntriesReply struct {
 	Term int
 	Success bool
 	FirstIndex int
+	CurrentLeader int
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -383,7 +393,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	DPrintf("Server %v (Term: %v) received AppendEntries from %v", rf.me, rf.currentTerm, args.LeaderId)
 	if args.Term < rf.currentTerm {
 		// if request is old
-		reply.Term, reply.Success, reply.FirstIndex = rf.currentTerm, false, rf.getLastLogIndex() + 1
+		reply.Term, reply.Success, reply.FirstIndex, reply.CurrentLeader = rf.currentTerm, false, rf.getLastLogIndex() + 1, rf.currentLeader
 		return
 	}
 	if args.Term > rf.currentTerm {
@@ -391,7 +401,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.currentTerm, rf.votedFor = args.Term, -1
 		rf.persist(nil)
 	}
+	rf.currentLeader = args.LeaderId
 	rf.stateChange(follower)
+	reply.CurrentLeader = rf.currentLeader
 
 	if args.PrevLogIndex > rf.getLastLogIndex() {
 		// if log doesn't match
@@ -439,15 +451,18 @@ type InstallSnapshotArgs struct {
 
 type InstallSnapshotReply struct {
 	Term int
+	CurrentLeader int
 }
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	reply.CurrentLeader = rf.currentLeader
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		return
 	}
+	rf.currentLeader = args.LeaderId
 	rf.stateChange(follower)
 	if args.Term > rf.currentTerm {
 		rf.currentTerm, rf.votedFor = args.Term, -1
@@ -543,7 +558,7 @@ func (rf *Raft) broadcastRequestVote() {
 						} else {
 							// someone newer than us
 							if reply.Term > rf.currentTerm {
-								rf.currentTerm, rf.votedFor = reply.Term, -1
+								rf.currentTerm, rf.votedFor, rf.currentLeader = reply.Term, -1, reply.CurrentLeader
 								rf.stateChange(follower)
 								rf.persist(nil)
 							}
@@ -593,7 +608,7 @@ func (rf *Raft) broadcastHeartBeat() {
 					rf.mu.Lock()
 					if rf.state == leader && args.Term == rf.currentTerm {
 						if reply.Term > rf.currentTerm {
-							rf.currentTerm, rf.votedFor = reply.Term, -1
+							rf.currentTerm, rf.votedFor, rf.currentLeader = reply.Term, -1, reply.CurrentLeader
 							rf.stateChange(follower)
 							rf.persist(nil)
 						} else {
@@ -641,7 +656,7 @@ func (rf *Raft) sendSnapshotTo(peer int) {
 		rf.mu.Lock()
 		if rf.state == leader && args.Term == rf.currentTerm {
 			if reply.Term > rf.currentTerm {
-				rf.currentTerm, rf.votedFor = reply.Term, -1
+				rf.currentTerm, rf.votedFor, rf.currentLeader = reply.Term, -1, reply.CurrentLeader
 				rf.stateChange(follower)
 				rf.persist(nil)
 			} else if args.LastIncludedIndex > rf.matchIndex[peer] {
@@ -726,6 +741,7 @@ func (rf *Raft) stateChange(newState State) {
 			log.Fatalf("Server %v (Term %v) Invalid state change to leader from %v", rf.me, rf.currentTerm, rf.state)
 		}
 		rf.state = leader
+		rf.currentLeader = rf.me
 		rf.nextIndex = make([]int, len(rf.peers))
 		rf.matchIndex = make([]int, len(rf.peers))
 		newIndex := len(rf.log)
@@ -739,6 +755,7 @@ func (rf *Raft) stateChange(newState State) {
 			log.Fatalf("Server %v (Term %v) Invalid state change to candidate from %v", rf.me, rf.currentTerm, rf.state)
 		}
 		rf.state = candidate
+		rf.currentLeader = -1
 		rf.currentTerm++
 		rf.votedFor = rf.me
 		rf.persist(nil)
@@ -872,6 +889,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.state = follower
 	rf.currentTerm = 0
 	rf.votedFor = -1
+	rf.currentLeader = -1
 
 	rf.log = make([]LogEntry, 0)
 	// we use a bubble log to simplify the initial case, since the requests have a prev index argument

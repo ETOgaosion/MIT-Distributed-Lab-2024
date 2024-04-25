@@ -1,20 +1,24 @@
 package kvraft
 
-import "6.5840/labrpc"
-import "testing"
-import "os"
+import (
+	"os"
+	"testing"
 
-// import "log"
-import crand "crypto/rand"
-import "math/big"
-import "math/rand"
-import "encoding/base64"
-import "sync"
-import "runtime"
-import "6.5840/raft"
-import "fmt"
-import "time"
-import "sync/atomic"
+	"6.5840/labrpc"
+
+	// import "log"
+	crand "crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"math/big"
+	"math/rand"
+	"runtime"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"6.5840/raft"
+)
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -31,14 +35,15 @@ func makeSeed() int64 {
 }
 
 // Randomize server handles
+// WHY???
 func random_handles(kvh []*labrpc.ClientEnd) []*labrpc.ClientEnd {
-	sa := make([]*labrpc.ClientEnd, len(kvh))
-	copy(sa, kvh)
-	for i := range sa {
-		j := rand.Intn(i + 1)
-		sa[i], sa[j] = sa[j], sa[i]
-	}
-	return sa
+	// sa := make([]*labrpc.ClientEnd, len(kvh))
+	// copy(sa, kvh)
+	// for i := range sa {
+	// 	j := rand.Intn(i + 1)
+	// 	sa[i], sa[j] = sa[j], sa[i]
+	// }
+	return kvh
 }
 
 type config struct {
