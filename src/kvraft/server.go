@@ -1,6 +1,7 @@
 package kvraft
 
 import (
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,8 +24,10 @@ type Op struct {
 }
 
 type OpReply struct {
-	Err Err
-	LeaderId int64
+	CmdType int8
+	ClientId int64
+	SequenceNum int64
+	Err string
 	Value string
 }
 
@@ -46,14 +49,6 @@ type KVServer struct {
 }
 
 func (kv *KVServer) waitCmd(cmd Op) OpReply {
-	_, _, isLeader := kv.rf.Start(cmd)
-	if !isLeader {
-		reply := OpReply{
-			Err: ErrWrongLeader,
-			LeaderId: int64(kv.rf.GetCurrentLeader()),
-		}
-		return reply
-	}
 	kv.mu.Lock()
 	ch := make(chan OpReply, 1)
 	kv.waitCh[cmd.ClientId] = ch
@@ -61,6 +56,9 @@ func (kv *KVServer) waitCmd(cmd Op) OpReply {
 	
 	select {
 	case res := <-ch:
+		if res.CmdType != cmd.CmdType || res.ClientId != cmd.ClientId || res.SequenceNum != cmd.SequenceNum {
+			res.Err = ErrCmd
+		}
 		kv.mu.Lock()
 		delete(kv.waitCh, cmd.ClientId)
 		kv.mu.Unlock()
@@ -74,6 +72,13 @@ func (kv *KVServer) waitCmd(cmd Op) OpReply {
 		}
 		return res
 	}
+}
+
+func (kv *KVServer) GetState(args *GetStateArgs, reply *GetStateReply) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	_, isLeader := kv.rf.GetState()
+	reply.IsLeader = isLeader
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
@@ -93,9 +98,14 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		SequenceNum: args.SequenceNum,
 		Key: args.Key,
 	}
+	_, _, isLeader := kv.rf.Start(cmd)
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
 	res := kv.waitCmd(cmd)
-	reply.Err, reply.Value, reply.LeaderId = res.Err, res.Value, res.LeaderId
-	DPrintf("Server %d Get reply: key: %s, value: %s, client ID: %d, sequence num: %d, err: %s, value: %s, leader ID: %d", kv.me, args.Key, reply.Value, args.ClientId, args.SequenceNum, reply.Err, reply.Value, reply.LeaderId)
+	reply.Err, reply.Value = res.Err, res.Value
+	DPrintf("Server %d Get reply: key: %s, client ID: %d, sequence num: %d, err: %s, value: %s", kv.me, args.Key, args.ClientId, args.SequenceNum, reply.Err, reply.Value)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
@@ -119,12 +129,17 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	} else if args.Op == "Append" {
 		cmd.CmdType = AppendCmd
 	} else {
-		reply.Err = ErrCmd
+		log.Fatalf("Invalid operation: %s", args.Op)
+		return
+	}
+	_, _, isLeader := kv.rf.Start(cmd)
+	if !isLeader {
+		reply.Err = ErrWrongLeader
 		return
 	}
 	res := kv.waitCmd(cmd)
-	reply.Err, reply.LeaderId = res.Err, res.LeaderId
-	DPrintf("Server %d %s reply: key: %s, value: %s, client ID: %d, sequence num: %d, err: %s, leader ID: %d", kv.me, args.Op, args.Key, args.Value, args.ClientId, args.SequenceNum, reply.Err, reply.LeaderId)
+	reply.Err = res.Err
+	DPrintf("Server %d %s reply: key: %s, value: %s, client ID: %d, sequence num: %d, err: %s", kv.me, args.Op, args.Key, args.Value, args.ClientId, args.SequenceNum, reply.Err)
 }
 
 // the tester calls Kill() when a KVServer instance won't
@@ -159,42 +174,44 @@ func (kv *KVServer) engineStart() {
 		msg := <-kv.applyCh
 		if msg.CommandValid {
 			op := msg.Command.(Op)
+			clientId := op.ClientId
 			kv.mu.Lock()
+			if op.SequenceNum < kv.clientSequences[clientId] {
+				continue
+			}
 			if op.CmdType == GetCmd {
-				clientId := op.ClientId
 				if op.SequenceNum > kv.clientSequences[clientId] {
-					// I think this is not gonna happen
 					kv.clientSequences[clientId] = op.SequenceNum
 				}
 				_, ok := kv.waitCh[clientId]
-				if ok && kv.clientSequences[clientId] == op.SequenceNum {
+				if ok {
 					res := OpReply {
+						CmdType: op.CmdType,
+						ClientId: op.ClientId,
+						SequenceNum: op.SequenceNum,
 						Err: OK,
 						Value: kv.kv[op.Key],
-						LeaderId: int64(kv.rf.GetCurrentLeader()),
 					}
-					select {
-					case kv.waitCh[clientId] <- res:
-					}
+					kv.waitCh[clientId] <- res
 				}
 			} else {
-				if !kv.isRepeated(op.ClientId, op.SequenceNum) {
+				if !kv.isRepeated(clientId, op.SequenceNum) {
 					if op.CmdType == PutCmd {
 						kv.kv[op.Key] = op.Value
 					} else if op.CmdType == AppendCmd {
 						kv.kv[op.Key] += op.Value
 					}
-					kv.clientSequences[op.ClientId] = op.SequenceNum
 				}
-				_, ok := kv.waitCh[op.ClientId]
-				if ok && kv.clientSequences[op.ClientId] == op.SequenceNum {
+				kv.clientSequences[clientId] = op.SequenceNum
+				_, ok := kv.waitCh[clientId]
+				if ok {
 					res := OpReply {
+						CmdType: op.CmdType,
+						ClientId: op.ClientId,
+						SequenceNum: op.SequenceNum,
 						Err: OK,
-						LeaderId: int64(kv.rf.GetCurrentLeader()),
 					}
-					select {
-					case kv.waitCh[op.ClientId] <- res:
-					}
+					kv.waitCh[clientId] <- res
 				}
 			}
 			kv.mu.Unlock()

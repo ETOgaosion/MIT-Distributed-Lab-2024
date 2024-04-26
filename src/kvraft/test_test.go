@@ -50,6 +50,7 @@ var t0 = time.Now()
 func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 	start := int64(time.Since(t0))
 	v := ck.Get(key)
+	DPrintf("Get(%v) -> %v", key, v)
 	end := int64(time.Since(t0))
 	cfg.op()
 	if log != nil {
@@ -117,6 +118,7 @@ func run_client(t *testing.T, cfg *config, me int, ca chan bool, fn func(me int,
 // spawn ncli clients and wait until they are all done
 func spawn_clients_and_wait(t *testing.T, cfg *config, ncli int, fn func(me int, ck *Clerk, t *testing.T)) {
 	ca := make([]chan bool, ncli)
+	DPrintf("ncli: %d", ncli)
 	for cli := 0; cli < ncli; cli++ {
 		ca[cli] = make(chan bool)
 		go run_client(t, cfg, cli, ca[cli], fn)
@@ -198,6 +200,7 @@ func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 				}
 			}
 		}
+		DPrintf("pa[0]: %v, pa[1]: %v", pa[0], pa[1])
 		cfg.partition(pa[0], pa[1])
 		time.Sleep(electionTimeout + time.Duration(rand.Int63()%200)*time.Millisecond)
 	}
@@ -256,7 +259,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 		clnts[i] = make(chan int)
 	}
 	for i := 0; i < 3; i++ {
-		// log.Printf("Iteration %v\n", i)
+		DPrintf("Iteration %v\n", i)
 		atomic.StoreInt32(&done_clients, 0)
 		atomic.StoreInt32(&done_partitioner, 0)
 		go spawn_clients_and_wait(t, cfg, nclients, func(cli int, myck *Clerk, t *testing.T) {
@@ -269,6 +272,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 				Put(cfg, myck, strconv.Itoa(cli), last, opLog, cli)
 			}
 			for atomic.LoadInt32(&done_clients) == 0 {
+				DPrintf("Client %v last: %v\n", myck.GetClientId(), last)
 				var key string
 				if randomkeys {
 					key = strconv.Itoa(rand.Intn(nclients))
@@ -293,7 +297,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 					v := Get(cfg, myck, key, opLog, cli)
 					// the following check only makes sense when we're not using random keys
 					if !randomkeys && v != last {
-						t.Fatalf("get wrong value, key %v, wanted:\n%v\n, got\n%v\n", key, last, v)
+						t.Fatalf("get wrong value, key %v, wanted:\n%v\n, got\n%v len(v) %v\n", key, last, v, len(v))
 					}
 				}
 			}
@@ -494,6 +498,8 @@ func TestOnePartition4A(t *testing.T) {
 
 	p1, p2 := cfg.make_partition()
 	cfg.partition(p1, p2)
+
+	DPrintf("p1: %v, p2: %v", p1, p2)
 
 	ckp1 := cfg.makeClient(p1)  // connect ckp1 to p1
 	ckp2a := cfg.makeClient(p2) // connect ckp2a to p2

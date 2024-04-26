@@ -207,6 +207,7 @@ func (cfg *config) makeClient(to []int) *Clerk {
 	}
 
 	ck := MakeClerk(random_handles(ends))
+	DPrintf("Make Clerk %d", ck.GetClientId())
 	cfg.clerks[ck] = endnames
 	cfg.nextClientId++
 	cfg.ConnectClientUnlocked(ck, to)

@@ -17,6 +17,7 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
         - It cost me a lot of time to debug and understand the algorithm, corner cases
     - [x] Lab3C: persistence(<ins>SS</ins>)
         - `TestFigure83C`/`TestFigure8Unreliable3C` cannot pass within 30s timeout
+        - Reliable Bug (Found in Lab4), Raft servers communication can have fault and retransmission, we must recognize those retransmission heartbeat, do not modify logs, just return success
     - [x] Lab3D: log compaction(<ins>H</ins>)
         - Don't be confused by conceptions, **Snapshot is just Log Compaction not persistence, we cannot recover states from Snapshots**
         - But debug is hard, you'd better not modify other files' implementation like `config.go`, here is some hints:
@@ -27,7 +28,8 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
             - We cannot compact the log actively by running a go routine, older tests not support such Snapshot mechanism, see the conception above
 - Lab4: Fault tolerance Key/Value Service
     - [Client Linear RPC Specification](https://web.stanford.edu/~ouster/cgi-bin/papers/OngaroPhD.pdf), Page 67
-
+    - [How to pass TestSpeed3A](https://github.com/niebayes/MIT-6.5840/tree/no_logging?tab=readme-ov-file#如何通过testspeed3a测试)
+ 
 Evaluation Level:
 
 - <ins>SS</ins>: Too Simple
@@ -37,3 +39,7 @@ Evaluation Level:
 - <ins>HH</ins>: Too Hard
 
 This repo clearifies some FAQ, but some answers need to be reconsider: [https://github.com/niebayes/MIT-6.5840](https://github.com/niebayes/MIT-6.5840), it uses modularized development, codes are not so referencable.
+
+## Version
+
+Go: `go version go1.21.3 linux/amd64`

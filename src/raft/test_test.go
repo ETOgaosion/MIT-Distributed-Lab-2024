@@ -803,6 +803,8 @@ func TestPersist33C(t *testing.T) {
 	cfg.start1((leader+0)%servers, cfg.applier)
 	cfg.connect((leader + 0) % servers)
 
+	DPrintf("connect %v %v", leader % servers, (leader + 2) % servers)
+
 	cfg.one(103, 2, true)
 
 	cfg.start1((leader+1)%servers, cfg.applier)
@@ -938,12 +940,14 @@ func TestFigure8Unreliable3C(t *testing.T) {
 
 		if leader != -1 && (rand.Int()%1000) < int(RaftElectionTimeout/time.Millisecond)/2 {
 			cfg.disconnect(leader)
+			DPrintf("disconnect %v", leader)
 			nup -= 1
 		}
 
 		if nup < 3 {
 			s := rand.Int() % servers
 			if cfg.connected[s] == false {
+				DPrintf("connect %v", s)
 				cfg.connect(s)
 				nup += 1
 			}

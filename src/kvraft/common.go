@@ -23,8 +23,7 @@ type PutAppendArgs struct {
 }
 
 type PutAppendReply struct {
-	Err Err
-	LeaderId int64
+	Err string
 }
 
 type GetArgs struct {
@@ -35,9 +34,15 @@ type GetArgs struct {
 }
 
 type GetReply struct {
-	Err   Err
+	Err   string
 	Value string
-	LeaderId int64
+}
+
+type GetStateArgs struct {
+}
+
+type GetStateReply struct {
+	IsLeader bool
 }
 
 const (

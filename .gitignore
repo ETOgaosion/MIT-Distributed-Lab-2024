@@ -9,3 +9,6 @@ mr-*
 *.json
 *.txt
 .check-build
+tmp/**
+tmp
+raft_copy
