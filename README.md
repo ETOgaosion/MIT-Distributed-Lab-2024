@@ -27,10 +27,10 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
             - We cannot compact the log actively by running a go routine, older tests not support such Snapshot mechanism, see the conception above
 - [ ] Lab4: Fault tolerance Key/Value Service
     - [x] Lab4A: Key/value service without snapshots(<ins>M</ins>)
-    - [Client Linear RPC Specification](https://web.stanford.edu/~ouster/cgi-bin/papers/OngaroPhD.pdf), Page 67
-    - [How to pass TestSpeed4A](https://github.com/niebayes/MIT-6.5840/tree/no_logging?tab=readme-ov-file#如何通过testspeed3a测试)
-    - `TestSpeed4A` cannot pass, the requests are theorically not satisfied with lab3 timing requirements
-    - **Do NOT modify your implementation of Raft in lab3 easily**, it's likely that in multi-process environment, any small design changes can cause critical bugs which is hardly understandable. **So if you have confidence of your lab3 tests, do not modify your implementation**. If you **really** detect some lab3 bugs by retesting Raft directly, you can fix them, and **make sure your Raft works perfectly after each modification**
+        - [Client Linear RPC Specification](https://web.stanford.edu/~ouster/cgi-bin/papers/OngaroPhD.pdf), Page 67
+        - [How to pass TestSpeed4A](https://github.com/niebayes/MIT-6.5840/tree/no_logging?tab=readme-ov-file#如何通过testspeed3a测试)
+        - `TestSpeed4A` cannot pass, the requests are theorically not satisfied with lab3 timing requirements
+        - **Do NOT modify your implementation of Raft in lab3 easily**, it's likely that in multi-process environment, any small design changes can cause critical bugs which is hardly understandable. **So if you have confidence of your lab3 tests, do not modify your implementation**. If you **really** detect some lab3 bugs by retesting Raft directly, you can fix them, and **make sure your Raft works perfectly after each modification**
  
 Evaluation Level (due to my own experience, regardless of official assessment):
 
