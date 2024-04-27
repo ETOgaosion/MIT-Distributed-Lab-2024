@@ -25,12 +25,18 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
                 - it means that `applyCh` is not the one `config.go` set up, note that `applierSnap` check the `rafts[i]` before check `applyCh` outputs
             - `readPersist` must reload `lastApplied`/`commitIndex` from `lastIncludedIndexRd` or new added server would get error to find the `lastApplied + 1` index
             - We cannot compact the log actively by running a go routine, older tests not support such Snapshot mechanism, see the conception above
-- [ ] Lab4: Fault tolerance Key/Value Service
+- [x] Lab4: Fault tolerance Key/Value Service(<ins>S/M</ins>)
     - [x] Lab4A: Key/value service without snapshots(<ins>M</ins>)
         - [Client Linear RPC Specification](https://web.stanford.edu/~ouster/cgi-bin/papers/OngaroPhD.pdf), Page 67
         - [How to pass TestSpeed4A](https://github.com/niebayes/MIT-6.5840/tree/no_logging?tab=readme-ov-file#如何通过testspeed3a测试)
         - `TestSpeed4A` cannot pass, the requests are theoretically not satisfied with lab3 timing requirements
         - **Do NOT modify your implementation of Raft in lab3 easily**, it's likely that in multi-process environment, any small design changes can cause critical bugs which is hardly understandable. **So if you have confidence of your lab3 tests, do not modify your implementation**. If you **really** detect some lab3 bugs by retesting Raft directly, you can fix them, and **make sure your Raft works perfectly after each modification**
+        - Use another RPC call `GetState` to recognize leader faster, no need for extra communication costs
+    - [x] Lab4B: Key/value service with snapshots(<ins>S</ins>)
+        - We should save our kv storage as well as client sequences into snapshots, and save raft states
+        - We tested a corner case handled roughly when in Lab3: in `AppendEntries`, if the leader try to send append entries which has already been send to snapshots by clients (But server's `nextIndex` array do not receive that news), this is gonna happen: `args.PrevLogIndex < rf.getFirstLogIndex()`, we should return `false` with `FirstIndex` set to `-1`, let server retry later. This modification can pass all tests, but may not be as clear as other theories
+        - `go test` can not handle well with goroutines, Iterations is easily stuck
+        - golang has a poor `unsafe.Sizeof`
  
 Evaluation Level (due to my own experience, regardless of official assessment):
 

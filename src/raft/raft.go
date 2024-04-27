@@ -20,8 +20,6 @@ package raft
 // ========================== Imports ============================
 
 import (
-	//	"bytes"
-
 	"bytes"
 	"log"
 	"math/rand"
@@ -29,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	//	"6.5840/labgob"
 	"6.5840/labgob"
 	"6.5840/labrpc"
 )
@@ -188,9 +185,11 @@ func (rf *Raft) trimLog(index int, term int) {
 	if index >= rf.getLastLogIndex() {
 		rf.log = make([]LogEntry, 1)
 		rf.log[0] = LogEntry{Index: index, Term: term}
-	} else {
+	} else if index >= rf.getFirstLogIndex() {
 		rf.log = append(make([]LogEntry, 1), rf.log[index + 1 - rf.getFirstLogIndex():]...)
 		rf.log[0] = LogEntry{Index: index, Term: term}
+	} else {
+		return
 	}
 	rf.lastApplied = index
 	rf.commitIndex = index
@@ -252,21 +251,11 @@ func (rf *Raft) readPersist(data []byte) {
 
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
-	var currentTermRd int
-	var votedForRd int
-	var logRd []LogEntry
-	var lastIncludedIndexRd int
-	var lastIncludedTermRd int
-	if d.Decode(&currentTermRd) != nil || d.Decode(&votedForRd) != nil || d.Decode(&logRd) != nil || d.Decode(&lastIncludedIndexRd) != nil || d.Decode(&lastIncludedTermRd) != nil {
+	if d.Decode(&rf.currentTerm) != nil || d.Decode(&rf.votedFor) != nil || d.Decode(&rf.log) != nil || d.Decode(&rf.lastIncludedIndex) != nil || d.Decode(&rf.lastIncludedTerm) != nil {
 		log.Fatalf("Server %v (Term: %v) readPersist error", rf.me, rf.currentTerm)
 	} else {
-		rf.currentTerm = currentTermRd
-		rf.votedFor = votedForRd
-		rf.log = logRd
-		rf.lastIncludedIndex = lastIncludedIndexRd
-		rf.lastIncludedTerm = lastIncludedTermRd
-		rf.lastApplied = lastIncludedIndexRd
-		rf.commitIndex = lastIncludedIndexRd
+		rf.lastApplied = rf.lastIncludedIndex
+		rf.commitIndex = rf.lastIncludedIndex
 	}
 }
 
@@ -399,8 +388,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	if args.PrevLogIndex < rf.getFirstLogIndex() - 1 {
-		log.Fatalf("Invalid PrevLogIndex: %v, FirstLogIndex: %v", args.PrevLogIndex, rf.getFirstLogIndex())
+	if args.PrevLogIndex < rf.getFirstLogIndex() {
+		DPrintf("Server %v (term: %v) received append entries from %v Invalid PrevLogIndex: %v, FirstLogIndex: %v", rf.me, rf.currentTerm, args.LeaderId, args.PrevLogIndex, rf.getFirstLogIndex())
+		reply.Term, reply.Success, reply.FirstIndex = rf.currentTerm, false, -1
+		return
 	}
 
 	match_term := rf.log[args.PrevLogIndex - rf.getFirstLogIndex()].Term

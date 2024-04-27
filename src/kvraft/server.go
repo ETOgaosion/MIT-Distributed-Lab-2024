@@ -1,10 +1,14 @@
 package kvraft
 
 import (
+	"bytes"
 	"log"
+	"os"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"6.5840/labgob"
 	"6.5840/labrpc"
@@ -41,13 +45,17 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	persister *raft.Persister
 	kv map[string]string
 	clientSequences map[int64]int64
 	waitCh map[int64]chan OpReply
 
+	persister *raft.Persister
+	currentBytes int
+
 }
 
+
+// common action for Get, Put, Append, wait for engine extract raft's output and manage with kv storage
 func (kv *KVServer) waitCmd(cmd Op) OpReply {
 	kv.mu.Lock()
 	ch := make(chan OpReply, 1)
@@ -74,6 +82,7 @@ func (kv *KVServer) waitCmd(cmd Op) OpReply {
 	}
 }
 
+// for faster leader recognization
 func (kv *KVServer) GetState(args *GetStateArgs, reply *GetStateReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
@@ -161,12 +170,48 @@ func (kv *KVServer) killed() bool {
 	return z == 1
 }
 
+// should be in lock
 func (kv *KVServer) isRepeated(clientId, sequenceNum int64) bool {
 	seq, ok := kv.clientSequences[clientId]
 	if ok && seq >= sequenceNum {
+		DPrintf("Server %v receive repeated cmd from ClientID: %v sequenceNum: %v seq: %v", kv.me, clientId, sequenceNum, seq)
 		return true
 	}
 	return false
+}
+
+// should be in lock
+func (kv *KVServer) getSnapShot() []byte {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(kv.clientSequences)
+	e.Encode(kv.kv)
+	snapshot := w.Bytes()
+	return snapshot
+}
+
+// should be in lock
+func (kv *KVServer) readSnapShot(data []byte) {
+	if data == nil || len(data) < 1 {
+		return
+	}
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	e_decode_clientseq := d.Decode(&kv.clientSequences)
+	e_decode_kv := d.Decode(&kv.kv)
+	has_err := false
+	if e_decode_clientseq != nil {
+		has_err = true
+		log.Printf("decode clientseq error %v", e_decode_clientseq)
+	}
+	if e_decode_kv != nil {
+		has_err = true
+		log.Printf("decode kv error %v", e_decode_kv)
+	}
+	if has_err {
+		debug.PrintStack()
+		os.Exit(-1)
+	}
 }
 
 func (kv *KVServer) engineStart() {
@@ -176,25 +221,12 @@ func (kv *KVServer) engineStart() {
 			op := msg.Command.(Op)
 			clientId := op.ClientId
 			kv.mu.Lock()
+			// NOTICE: unsafe.Sizeof do not count the actual size of ptr types
+			kv.currentBytes += int(unsafe.Sizeof(op)) + len(op.Key) + len(op.Value)
 			if op.SequenceNum < kv.clientSequences[clientId] {
 				continue
 			}
-			if op.CmdType == GetCmd {
-				if op.SequenceNum > kv.clientSequences[clientId] {
-					kv.clientSequences[clientId] = op.SequenceNum
-				}
-				_, ok := kv.waitCh[clientId]
-				if ok {
-					res := OpReply {
-						CmdType: op.CmdType,
-						ClientId: op.ClientId,
-						SequenceNum: op.SequenceNum,
-						Err: OK,
-						Value: kv.kv[op.Key],
-					}
-					kv.waitCh[clientId] <- res
-				}
-			} else {
+			if op.CmdType == PutCmd || op.CmdType == AppendCmd {
 				if !kv.isRepeated(clientId, op.SequenceNum) {
 					if op.CmdType == PutCmd {
 						kv.kv[op.Key] = op.Value
@@ -202,18 +234,34 @@ func (kv *KVServer) engineStart() {
 						kv.kv[op.Key] += op.Value
 					}
 				}
-				kv.clientSequences[clientId] = op.SequenceNum
-				_, ok := kv.waitCh[clientId]
-				if ok {
-					res := OpReply {
-						CmdType: op.CmdType,
-						ClientId: op.ClientId,
-						SequenceNum: op.SequenceNum,
-						Err: OK,
-					}
-					kv.waitCh[clientId] <- res
-				}
 			}
+			if op.SequenceNum > kv.clientSequences[clientId] {
+				kv.clientSequences[clientId] = op.SequenceNum
+			}
+			_, ok := kv.waitCh[clientId]
+			if ok {
+				res := OpReply {
+					CmdType: op.CmdType,
+					ClientId: op.ClientId,
+					SequenceNum: op.SequenceNum,
+					Err: OK,
+					Value: kv.kv[op.Key],
+				}
+				DPrintf("Server %d reply: key: %s, client ID: %d, sequence num: %d, err: %s, value: %s", kv.me, op.Key, op.ClientId, op.SequenceNum, res.Err, res.Value)
+				kv.waitCh[clientId] <- res
+			}
+			if kv.maxraftstate > 0 && kv.persister.RaftStateSize() > kv.maxraftstate && kv.currentBytes > kv.maxraftstate {
+				DPrintf("Server %d start snapshot, kv.persister.RaftStateSize(): %v, kv.currentBytes: %v, kv.maxraftstate: %v", kv.me, kv.persister.RaftStateSize(), kv.currentBytes, kv.maxraftstate)
+				snapshot := kv.getSnapShot()
+				kv.currentBytes = 0
+				kv.mu.Unlock()
+				kv.rf.Snapshot(msg.CommandIndex, snapshot)
+			} else {
+				kv.mu.Unlock()
+			}
+		} else if msg.SnapshotValid {
+			kv.mu.Lock()
+			kv.readSnapShot(msg.Snapshot)
 			kv.mu.Unlock()
 		}
 	}
@@ -247,6 +295,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.clientSequences = make(map[int64]int64)
 	kv.kv = make(map[string]string)
 	kv.waitCh = make(map[int64]chan OpReply)
+	kv.persister = persister
+	kv.currentBytes = 0
+	kv.readSnapShot(kv.persister.ReadSnapshot())
 
 	go kv.engineStart()
 
