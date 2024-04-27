@@ -35,7 +35,7 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
     - [x] Lab4B: Key/value service with snapshots(<ins>S</ins>)
         - We should save our kv storage as well as client sequences into snapshots, and save raft states
         - We tested a corner case handled roughly when in Lab3: in `AppendEntries`, if the leader try to send append entries which has already been send to snapshots by clients (But server's `nextIndex` array do not receive that news), this is gonna happen: `args.PrevLogIndex < rf.getFirstLogIndex()`, we should return `false` with `FirstIndex` set to `-1`, let server retry later. This modification can pass all tests, but may not be as clear as other theories
-        - `go test` can not handle well with goroutines, Iterations is easily stuck
+        - `go test` can not handle well with goroutines, Iterations can be easily stuck
         - golang has a poor `unsafe.Sizeof`
  
 Evaluation Level (due to my own experience, regardless of official assessment):
