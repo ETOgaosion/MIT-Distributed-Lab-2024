@@ -1,17 +1,19 @@
 package shardctrler
 
-import "6.5840/labrpc"
-import "6.5840/raft"
-import "testing"
-import "os"
+import (
+	"os"
+	"testing"
 
-// import "log"
-import crand "crypto/rand"
-import "math/rand"
-import "encoding/base64"
-import "sync"
-import "runtime"
-import "time"
+	"6.5840/labrpc"
+	"6.5840/raft"
+
+	// import "log"
+	crand "crypto/rand"
+	"encoding/base64"
+	"runtime"
+	"sync"
+	"time"
+)
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -22,13 +24,14 @@ func randstring(n int) string {
 
 // Randomize server handles
 func random_handles(kvh []*labrpc.ClientEnd) []*labrpc.ClientEnd {
-	sa := make([]*labrpc.ClientEnd, len(kvh))
-	copy(sa, kvh)
-	for i := range sa {
-		j := rand.Intn(i + 1)
-		sa[i], sa[j] = sa[j], sa[i]
-	}
-	return sa
+	// sa := make([]*labrpc.ClientEnd, len(kvh))
+	// copy(sa, kvh)
+	// for i := range sa {
+	// 	j := rand.Intn(i + 1)
+	// 	sa[i], sa[j] = sa[j], sa[i]
+	// }
+	// return sa
+	return kvh
 }
 
 type config struct {

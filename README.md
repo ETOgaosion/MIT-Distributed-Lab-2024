@@ -37,6 +37,9 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
         - We tested a corner case handled roughly when in Lab3: in `AppendEntries`, if the leader try to send append entries which has already been send to snapshots by clients (But server's `nextIndex` array do not receive that news), this is gonna happen: `args.PrevLogIndex < rf.getFirstLogIndex()`, we should return `false` with `FirstIndex` set to `-1`, let server retry later. This modification can pass all tests, but may not be as clear as other theories
         - `go test` can not handle well with goroutines, Iterations can be easily stuck
         - golang has a poor `unsafe.Sizeof`
+- [ ] Lab5: Sharded Key/Value Service
+    - Recommend [this blog](https://www.cnblogs.com/pxlsdz/p/15685837.html)
+    - [ ] Lab5A: The Controller and Static Sharding
  
 Evaluation Level (due to my own experience, regardless of official assessment):
 
@@ -51,3 +54,4 @@ This repo clearifies some FAQ, but some answers need to be reconsider: [https://
 ## Version
 
 Go: `go version go1.21.3 linux/amd64`
+Project based on `git://g.csail.mit.edu/6.5840-golabs-2024` Commit: `e7aea3e613fdf9814580c97fd56c22c86a798c0e`

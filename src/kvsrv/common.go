@@ -6,7 +6,7 @@ type ClientIDArgs struct {
 }
 
 type ClientIDReply struct {
-	ClientID int
+	ClientId int
 }
 
 // Put or Append
@@ -16,8 +16,8 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	ClientID int
-	PutAppendReqID int
+	ClientId int
+	PutAppendReqId int
 	Retry bool
 }
 

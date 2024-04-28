@@ -49,13 +49,13 @@ func (kv *KVServer) GetClientID(args *ClientIDArgs, reply *ClientIDReply) {
 	kv.mu.Lock()
 	// if we use retry, we must need extra data structure to store the given client id and the client must do confirmation, cost too much
 	kv.clientcount++
-	reply.ClientID = kv.clientcount
+	reply.ClientId = kv.clientcount
 	kv.mu.Unlock()
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
-	// DPrintf("Get request: key: %s, client ID: %d, retry: %t", args.Key, args.ClientID, args.Retry)
+	// DPrintf("Get request: key: %s, client ID: %d, retry: %t", args.Key, args.ClientId, args.Retry)
 	kv.mu.Lock()
 	reply.Value = kv.kv[args.Key]
 	kv.mu.Unlock()
@@ -63,7 +63,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
-	// DPrintf("Put request: key: %s, value: %s, client id: %d, retry: %t", args.Key, args.Value, args.ClientID, args.Retry)
+	// DPrintf("Put request: key: %s, value: %s, client id: %d, retry: %t", args.Key, args.Value, args.ClientId, args.Retry)
 	kv.mu.Lock()
 	kv.kv[args.Key] = args.Value
 	kv.mu.Unlock()
@@ -71,22 +71,22 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
-	// DPrintf("Append request: key: %s, value: %s, client id: %d, retry: %t", args.Key, args.Value, args.ClientID, args.Retry)
+	// DPrintf("Append request: key: %s, value: %s, client id: %d, retry: %t", args.Key, args.Value, args.ClientId, args.Retry)
 	kv.mu.Lock()
-	for k := range kv.appendrequests[args.ClientID] {
-		if k != args.PutAppendReqID {
-			delete(kv.appendrequests[args.ClientID], k)
+	for k := range kv.appendrequests[args.ClientId] {
+		if k != args.PutAppendReqId {
+			delete(kv.appendrequests[args.ClientId], k)
 		}
 	}
-	if _, ok := kv.appendrequests[args.ClientID]; !ok {
-		kv.appendrequests[args.ClientID] = make(map[int]AppendValue)
-		kv.appendrequests[args.ClientID][args.PutAppendReqID] = AppendValue{true, kv.kv[args.Key]}
+	if _, ok := kv.appendrequests[args.ClientId]; !ok {
+		kv.appendrequests[args.ClientId] = make(map[int]AppendValue)
+		kv.appendrequests[args.ClientId][args.PutAppendReqId] = AppendValue{true, kv.kv[args.Key]}
 		reply.Value = kv.kv[args.Key]
 		kv.kv[args.Key] += args.Value
 	} else {
-		if value, ok := kv.appendrequests[args.ClientID][args.PutAppendReqID]; !ok {
+		if value, ok := kv.appendrequests[args.ClientId][args.PutAppendReqId]; !ok {
 			// new client, key or value
-			kv.appendrequests[args.ClientID][args.PutAppendReqID] = AppendValue{true, kv.kv[args.Key]}
+			kv.appendrequests[args.ClientId][args.PutAppendReqId] = AppendValue{true, kv.kv[args.Key]}
 			reply.Value = kv.kv[args.Key]
 			kv.kv[args.Key] += args.Value
 		} else {
@@ -102,7 +102,7 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 				// we still need to execute
 				// !======= Case 2 ==========!
 				// this request is new, it happens to be same with arguments, update the storage request
-				kv.appendrequests[args.ClientID][args.PutAppendReqID] = AppendValue{true, kv.kv[args.Key]}
+				kv.appendrequests[args.ClientId][args.PutAppendReqId] = AppendValue{true, kv.kv[args.Key]}
 				reply.Value = kv.kv[args.Key]
 				kv.kv[args.Key] += args.Value
 			}

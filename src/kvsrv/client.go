@@ -40,8 +40,8 @@ func (ck *Clerk) GetClientID() int {
 		args.Retry = true
 		ok = ck.server.Call("KVServer.GetClientID", &args, &reply)
 	}
-	ck.id = reply.ClientID
-	return reply.ClientID
+	ck.id = reply.ClientId
+	return reply.ClientId
 }
 
 // fetch the current value for a key.
@@ -81,9 +81,9 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	args.Key = key
 	args.Value = value
 	args.Retry = false
-	args.ClientID = ck.id
+	args.ClientId = ck.id
 	if op == "Append" {
-		args.PutAppendReqID = ck.appendcounter
+		args.PutAppendReqId = ck.appendcounter
 		ck.appendcounter++
 	}
 	reply := PutAppendReply{}
@@ -116,8 +116,8 @@ func (ck *Clerk) Append(key string, value string) string {
 	args.Key = key
 	args.Value = value
 	args.Retry = false
-	args.ClientID = ck.id
-	args.PutAppendReqID = ck.appendcounter
+	args.ClientId = ck.id
+	args.PutAppendReqId = ck.appendcounter
 	ck.appendcounter++
 	reply := PutAppendReply{}
 	ok := ck.server.Call("KVServer.Append", &args, &reply)

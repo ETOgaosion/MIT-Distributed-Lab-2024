@@ -47,7 +47,7 @@ type KVServer struct {
 	// Your definitions here.
 	kv map[string]string
 	clientSequences map[int64]int64
-	waitCh map[int64]chan OpReply
+	waitChannels map[int64]chan OpReply
 
 	persister *raft.Persister
 	currentBytes int
@@ -59,7 +59,7 @@ type KVServer struct {
 func (kv *KVServer) waitCmd(cmd Op) OpReply {
 	kv.mu.Lock()
 	ch := make(chan OpReply, 1)
-	kv.waitCh[cmd.ClientId] = ch
+	kv.waitChannels[cmd.ClientId] = ch
 	kv.mu.Unlock()
 	
 	select {
@@ -68,12 +68,12 @@ func (kv *KVServer) waitCmd(cmd Op) OpReply {
 			res.Err = ErrCmd
 		}
 		kv.mu.Lock()
-		delete(kv.waitCh, cmd.ClientId)
+		delete(kv.waitChannels, cmd.ClientId)
 		kv.mu.Unlock()
 		return res
 	case <-time.After(100 * time.Millisecond):
 		kv.mu.Lock()
-		delete(kv.waitCh, cmd.ClientId)
+		delete(kv.waitChannels, cmd.ClientId)
 		kv.mu.Unlock()
 		res := OpReply{
 			Err: ErrTimeout,
@@ -174,7 +174,7 @@ func (kv *KVServer) killed() bool {
 func (kv *KVServer) isRepeated(clientId, sequenceNum int64) bool {
 	seq, ok := kv.clientSequences[clientId]
 	if ok && seq >= sequenceNum {
-		DPrintf("Server %v receive repeated cmd from ClientID: %v sequenceNum: %v seq: %v", kv.me, clientId, sequenceNum, seq)
+		DPrintf("Server %v receive repeated cmd from ClientId: %v sequenceNum: %v seq: %v", kv.me, clientId, sequenceNum, seq)
 		return true
 	}
 	return false
@@ -238,7 +238,7 @@ func (kv *KVServer) engineStart() {
 			if op.SequenceNum > kv.clientSequences[clientId] {
 				kv.clientSequences[clientId] = op.SequenceNum
 			}
-			_, ok := kv.waitCh[clientId]
+			_, ok := kv.waitChannels[clientId]
 			if ok {
 				res := OpReply {
 					CmdType: op.CmdType,
@@ -248,7 +248,7 @@ func (kv *KVServer) engineStart() {
 					Value: kv.kv[op.Key],
 				}
 				DPrintf("Server %d reply: key: %s, client ID: %d, sequence num: %d, err: %s, value: %s", kv.me, op.Key, op.ClientId, op.SequenceNum, res.Err, res.Value)
-				kv.waitCh[clientId] <- res
+				kv.waitChannels[clientId] <- res
 			}
 			if kv.maxraftstate > 0 && kv.persister.RaftStateSize() > kv.maxraftstate && kv.currentBytes > kv.maxraftstate {
 				DPrintf("Server %d start snapshot, kv.persister.RaftStateSize(): %v, kv.currentBytes: %v, kv.maxraftstate: %v", kv.me, kv.persister.RaftStateSize(), kv.currentBytes, kv.maxraftstate)
@@ -294,7 +294,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 	kv.clientSequences = make(map[int64]int64)
 	kv.kv = make(map[string]string)
-	kv.waitCh = make(map[int64]chan OpReply)
+	kv.waitChannels = make(map[int64]chan OpReply)
 	kv.persister = persister
 	kv.currentBytes = 0
 	kv.readSnapShot(kv.persister.ReadSnapshot())

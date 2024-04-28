@@ -30,12 +30,27 @@ type Config struct {
 
 const (
 	OK = "OK"
+	ErrWrongLeader 	= "ErrWrongLeader"
+	ErrTimeout = "ErrTimeout"
+	ErrNotApplied = "ErrNotApplied"
+	ErrCmd = "ErrCmd"
+)
+
+const (
+	JoinCmd = 1
+	LeaveCmd = 2
+	MoveCmd = 3
+	QueryCmd = 4
 )
 
 type Err string
+type CmdType int8
 
+// A new Group join in, so shards need rebalance
 type JoinArgs struct {
 	Servers map[int][]string // new GID -> servers mappings
+	ClientId int64
+	SequenceNum int64
 }
 
 type JoinReply struct {
@@ -45,6 +60,8 @@ type JoinReply struct {
 
 type LeaveArgs struct {
 	GIDs []int
+	ClientId int64
+	SequenceNum int64
 }
 
 type LeaveReply struct {
@@ -55,6 +72,8 @@ type LeaveReply struct {
 type MoveArgs struct {
 	Shard int
 	GID   int
+	ClientId int64
+	SequenceNum int64
 }
 
 type MoveReply struct {
@@ -64,10 +83,35 @@ type MoveReply struct {
 
 type QueryArgs struct {
 	Num int // desired config number
+	ClientId int64
+	SequenceNum int64
 }
 
 type QueryReply struct {
 	WrongLeader bool
 	Err         Err
 	Config      Config
+}
+
+type GetStateArgs struct {
+}
+
+type GetStateReply struct {
+	IsLeader bool
+}
+
+
+func (c *Config) DeepCopy() Config {
+	newConfig := Config{
+		Num: c.Num,
+		Groups: make(map[int][]string),
+	}
+	for k, v := range c.Shards {
+		newConfig.Shards[k] = v
+	}
+	for k, v := range c.Groups {
+		newConfig.Groups[k] = make([]string, len(v))
+		copy(newConfig.Groups[k], v)
+	}
+	return newConfig
 }

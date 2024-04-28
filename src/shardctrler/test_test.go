@@ -2,6 +2,7 @@ package shardctrler
 
 import (
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 func check(t *testing.T, groups []int, ck *Clerk) {
 	c := ck.Query(-1)
 	if len(c.Groups) != len(groups) {
+		debug.PrintStack()
 		t.Fatalf("wanted %v groups, got %v", len(groups), len(c.Groups))
 	}
 
@@ -19,6 +21,7 @@ func check(t *testing.T, groups []int, ck *Clerk) {
 	for _, g := range groups {
 		_, ok := c.Groups[g]
 		if ok != true {
+			debug.PrintStack()
 			t.Fatalf("missing group %v", g)
 		}
 	}
@@ -28,6 +31,7 @@ func check(t *testing.T, groups []int, ck *Clerk) {
 		for s, g := range c.Shards {
 			_, ok := c.Groups[g]
 			if ok == false {
+				debug.PrintStack()
 				t.Fatalf("shard %v -> invalid group %v", s, g)
 			}
 		}
@@ -49,6 +53,7 @@ func check(t *testing.T, groups []int, ck *Clerk) {
 		}
 	}
 	if max > min+1 {
+		debug.PrintStack()
 		t.Fatalf("max %v too much larger than min %v", max, min)
 	}
 }
