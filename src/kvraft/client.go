@@ -15,7 +15,6 @@ type Clerk struct {
 	leaderId int64
 	clientId int64
 	sequenceNum int64
-	empty bool
 }
 
 func nrand() int64 {
@@ -32,7 +31,6 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck.leaderId = 0
 	ck.clientId = nrand()
 	ck.sequenceNum = 1
-	ck.empty = true
 	return ck
 }
 

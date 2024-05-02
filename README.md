@@ -29,6 +29,7 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
     - [x] Lab4A: Key/value service without snapshots(<ins>M</ins>)
         - [Client Linear RPC Specification](https://web.stanford.edu/~ouster/cgi-bin/papers/OngaroPhD.pdf), Page 67
         - [How to pass TestSpeed4A](https://github.com/niebayes/MIT-6.5840/tree/no_logging?tab=readme-ov-file#如何通过testspeed3a测试)
+        - **We accelarate the leader finding process by add a `GetState` RPC call, I do not know why the framework code must try every server each time, cost too much extra time**
         - `TestSpeed4A` cannot pass, the requests are theoretically not satisfied with lab3 timing requirements
         - **Do NOT modify your implementation of Raft in lab3 easily**, it's likely that in multi-process environment, any small design changes can cause critical bugs which is hardly understandable. **So if you have confidence of your lab3 tests, do not modify your implementation**. If you **really** detect some lab3 bugs by retesting Raft directly, you can fix them, and **make sure your Raft works perfectly after each modification**
         - Use another RPC call `GetState` to recognize leader faster, no need for extra communication costs
@@ -40,6 +41,7 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
 - [ ] Lab5: Sharded Key/Value Service
     - Recommend [this blog](https://www.cnblogs.com/pxlsdz/p/15685837.html)
     - [ ] Lab5A: The Controller and Static Sharding
+        - **TC: $O(2n)$ SC: $O(1)$ Shard rebalance algorithm (Not like others' costly $O(n^2)$): Calculate `avg` and `remains` number of shards in gids first, Use 0 gid as a tmp storage for extra shards (larger than `avg + 1` if still got `remains`, larger than avg if `remains` is 0), then move all these shards to gid shards less than `avg`**
  
 Evaluation Level (due to my own experience, regardless of official assessment):
 

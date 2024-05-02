@@ -54,7 +54,6 @@ type KVServer struct {
 
 }
 
-
 // common action for Get, Put, Append, wait for engine extract raft's output and manage with kv storage
 func (kv *KVServer) waitCmd(cmd Op) OpReply {
 	kv.mu.Lock()
