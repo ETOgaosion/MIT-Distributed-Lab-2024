@@ -2,6 +2,7 @@ package shardctrler
 
 import (
 	"fmt"
+	"log"
 	"runtime/debug"
 	"sync"
 	"testing"
@@ -131,11 +132,13 @@ func TestBasic(t *testing.T) {
 		fmt.Printf("Test: Historical queries ...\n")
 
 		for s := 0; s < nservers; s++ {
+			log.Printf("shutdown server %v", s)
 			cfg.ShutdownServer(s)
 			for i := 0; i < len(cfa); i++ {
 				c := ck.Query(cfa[i].Num)
 				check_same_config(t, c, cfa[i])
 			}
+			log.Printf("start server %v", s)
 			cfg.StartServer(s)
 			cfg.ConnectAll()
 		}

@@ -102,7 +102,7 @@ type ShardNodeState int8
 
 const (
 	UpdateConfigInterval = 100 * time.Millisecond
-	InstallShardsInterval = 150 * time.Millisecond
+	InstallShardsInterval = 300 * time.Millisecond
 )
 
 // which shard is a key in?

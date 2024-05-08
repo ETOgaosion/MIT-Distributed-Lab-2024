@@ -1,0 +1,4 @@
+github.com/linkdata/deadlock v0.4.0 h1:OM4Vqn5LinkHiCy9IqcA5aJ7zKU1kv5XhC7kiW4Lckc=
+github.com/linkdata/deadlock v0.4.0/go.mod h1:MvI1hZGGcTghOKTcL6lATkgXkVVIOwHZ62l1Y0xprUI=
+github.com/petermattis/goid v0.0.0-20230317030725-371a4b8eda08 h1:hDSdbBuw3Lefr6R18ax0tZ2BJeNB3NehB3trOwYBsdU=
+github.com/petermattis/goid v0.0.0-20230317030725-371a4b8eda08/go.mod h1:pxMtw7cyUw6B2bRH0ZBANSPg+AoSud1I1iyJHI69jH4=

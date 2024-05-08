@@ -375,6 +375,9 @@ func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config
 	runtime.GOMAXPROCS(4)
 	cfg := &config{}
 	cfg.t = t
+	if maxraftstate > 0 {
+		maxraftstate = 100000
+	}
 	cfg.maxraftstate = maxraftstate
 	cfg.net = labrpc.MakeNetwork()
 	cfg.start = time.Now()

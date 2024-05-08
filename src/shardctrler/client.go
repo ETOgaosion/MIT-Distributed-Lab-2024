@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"6.5840/labrpc"
+	"github.com/linkdata/deadlock"
 )
 
 type Clerk struct {
@@ -18,7 +19,12 @@ type Clerk struct {
 	ClientId int64
 	SequenceNum int64
 	LeaderId int64
+	mu deadlock.Mutex
 }
+
+const (
+	retryInterval = 300 * time.Microsecond
+)
 
 func nrand() int64 {
 	max := big.NewInt(int64(1) << 62)
@@ -37,22 +43,9 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	return ck
 }
 
-func (ck *Clerk) GetState() int {
-	for {
-		args := GetStateArgs{}
-		reply := GetStateReply{}
-		ok := ck.servers[ck.LeaderId].Call("ShardCtrler.GetState", &args, &reply)
-		if ok && reply.IsLeader {
-			DPrintf("Client %d GetState from %d", ck.ClientId, ck.LeaderId)
-			return int(ck.LeaderId)
-		} else {
-			time.Sleep(100 * time.Millisecond)
-			ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
-		}
-	}
-}
-
 func (ck *Clerk) Query(num int) Config {
+	ck.mu.Lock()
+	defer ck.mu.Unlock()
 	args := QueryArgs{}
 	// Your code here.
 	args.Num = num
@@ -60,14 +53,13 @@ func (ck *Clerk) Query(num int) Config {
 	args.SequenceNum = ck.SequenceNum
 	var reply QueryReply
 
-	ck.GetState()
-	DPrintf("Client %d Query %d from %d", ck.ClientId, num, ck.LeaderId)
 	ok := ck.servers[ck.LeaderId].Call("ShardCtrler.Query", &args, &reply)
+	DPrintf("Client %d Query %d from %d", ck.ClientId, num, ck.LeaderId)
 	for !ok || reply.Err != OK {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
-		ck.GetState()
 		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Query", &args, &reply)
-		DPrintf("Client %d retry Query %d from %d reply.Err: %s", ck.ClientId, num, ck.LeaderId, reply.Err)
+		DPrintf("Client %d retry Query %d from %d ok: %v reply.Err: %s len(ck.servers): %v", ck.ClientId, num, ck.LeaderId, ok, reply.Err, len(ck.servers))
+		time.Sleep(retryInterval)
 	}
 	if ok {
 		ck.SequenceNum++
@@ -77,6 +69,8 @@ func (ck *Clerk) Query(num int) Config {
 }
 
 func (ck *Clerk) Join(servers map[int][]string) {
+	ck.mu.Lock()
+	defer ck.mu.Unlock()
 	args := JoinArgs{}
 	// Your code here.
 	args.Servers = servers
@@ -84,14 +78,13 @@ func (ck *Clerk) Join(servers map[int][]string) {
 	args.SequenceNum = ck.SequenceNum
 	var reply JoinReply
 
-	ck.GetState()
-	DPrintf("Client %d Join %v from %d", ck.ClientId, servers, ck.LeaderId)
 	ok := ck.servers[ck.LeaderId].Call("ShardCtrler.Join", &args, &reply)
+	DPrintf("Client %d Join %v from %d", ck.ClientId, servers, ck.LeaderId)
 	for !ok || reply.Err != OK {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
-		ck.GetState()
-		DPrintf("Client %d retry Join %v from %d reply.Err: %s", ck.ClientId, servers, ck.LeaderId, reply.Err)
 		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Join", &args, &reply)
+		DPrintf("Client %d retry Join %v from %d reply.Err: %s", ck.ClientId, servers, ck.LeaderId, reply.Err)
+		time.Sleep(retryInterval)
 	}
 	if ok {
 		ck.SequenceNum++
@@ -100,6 +93,8 @@ func (ck *Clerk) Join(servers map[int][]string) {
 }
 
 func (ck *Clerk) Leave(gids []int) {
+	ck.mu.Lock()
+	defer ck.mu.Unlock()
 	args := LeaveArgs{}
 	// Your code here.
 	args.GIDs = gids
@@ -107,14 +102,13 @@ func (ck *Clerk) Leave(gids []int) {
 	args.SequenceNum = ck.SequenceNum
 	var reply LeaveReply
 
-	ck.GetState()
-	DPrintf("Client %d Leave %v from %d", ck.ClientId, gids, ck.LeaderId)
 	ok := ck.servers[ck.LeaderId].Call("ShardCtrler.Leave", &args, &reply)
+	DPrintf("Client %d Leave %v from %d", ck.ClientId, gids, ck.LeaderId)
 	for !ok || reply.Err != OK {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
-		ck.GetState()
-		DPrintf("Client %d retry Leave %v from %d reply.Err: %s", ck.ClientId, gids, ck.LeaderId, reply.Err)
 		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Leave", &args, &reply)
+		DPrintf("Client %d retry Leave %v from %d reply.Err: %s", ck.ClientId, gids, ck.LeaderId, reply.Err)
+		time.Sleep(retryInterval)
 	}
 	if ok {
 		ck.SequenceNum++
@@ -123,6 +117,8 @@ func (ck *Clerk) Leave(gids []int) {
 }
 
 func (ck *Clerk) Move(shard int, gid int) {
+	ck.mu.Lock()
+	defer ck.mu.Unlock()
 	args := MoveArgs{}
 	// Your code here.
 	args.Shard = shard
@@ -131,14 +127,13 @@ func (ck *Clerk) Move(shard int, gid int) {
 	args.SequenceNum = ck.SequenceNum
 	var reply LeaveReply
 
-	ck.GetState()
-	DPrintf("Client %d Move %v %v from %d", ck.ClientId, shard, gid, ck.LeaderId)
 	ok := ck.servers[ck.LeaderId].Call("ShardCtrler.Move", &args, &reply)
+	DPrintf("Client %d Move %v %v from %d", ck.ClientId, shard, gid, ck.LeaderId)
 	for !ok || reply.Err != OK {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
-		ck.GetState()
-		DPrintf("Client %d retry Move %v %v from %d reply.Err: %s", ck.ClientId, shard, gid, ck.LeaderId, reply.Err)
 		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Move", &args, &reply)
+		DPrintf("Client %d retry Move %v %v from %d reply.Err: %s", ck.ClientId, shard, gid, ck.LeaderId, reply.Err)
+		time.Sleep(retryInterval)
 	}
 	if ok {
 		ck.SequenceNum++

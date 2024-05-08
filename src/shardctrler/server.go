@@ -1,13 +1,14 @@
 package shardctrler
 
 import (
+	"log"
 	"sort"
-	"sync"
 	"time"
 
 	"6.5840/labgob"
 	"6.5840/labrpc"
 	"6.5840/raft"
+	"github.com/linkdata/deadlock"
 )
 
 
@@ -43,7 +44,7 @@ type OpReply struct {
 
 
 type ShardCtrler struct {
-	mu      sync.Mutex
+	mu      deadlock.Mutex
 	me      int
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
@@ -63,6 +64,10 @@ func (sc *ShardCtrler) GetState(args *GetStateArgs, reply *GetStateReply) {
 	reply.IsLeader = isLeader
 }
 
+func (sc *ShardCtrler) isLeader() bool {
+	_, isLeader := sc.rf.GetState()
+	return isLeader
+}
 
 // common action for Get, Put, Append, wait for engine extract raft's output and manage with kv storage
 func (sc *ShardCtrler) waitCmd(cmd Op, index int) OpReply {
@@ -80,7 +85,7 @@ func (sc *ShardCtrler) waitCmd(cmd Op, index int) OpReply {
 		delete(sc.waitChannels, index)
 		sc.mu.Unlock()
 		return res
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		sc.mu.Lock()
 		delete(sc.waitChannels, index)
 		sc.mu.Unlock()
@@ -192,6 +197,7 @@ func (sc *ShardCtrler) Query(args *QueryArgs, reply *QueryReply) {
 	}
 	index, _, isLeader := sc.rf.Start(cmd)
 	if !isLeader {
+		log.Printf("Server %v %p isLeader: %v ErrorWrongLeader", sc.me, sc, sc.isLeader())
 		reply.WrongLeader = true
 		reply.Err = ErrWrongLeader
 		return
@@ -253,7 +259,7 @@ func (sc *ShardCtrler) balance() {
 	numShards := NShards
 	avg := numShards / numGroups
 	remains := numShards % numGroups
-	DPrintf("Server %v balance: numGroups: %v, numShards: %v, avg: %v, remains: %v, gids: %v, gidshards: %v", sc.me, numGroups, numShards, avg, remains, gids, gidshards)
+	DPrintf("Server %v %p balance: numGroups: %v, numShards: %v, avg: %v, remains: %v, gids: %v, gidshards: %v", sc.me, sc, numGroups, numShards, avg, remains, gids, gidshards)
 	// balance algorithm: we need scan twice, first scan to make sure all groups have no more than avg or avg + 1 shards, second scan to move the gid 0's extra shards to groups with less than avg shards
 	// first scan
 	for i := 0; i < numGroups; i++ {
@@ -279,7 +285,7 @@ func (sc *ShardCtrler) balance() {
 			}
 		}
 	}
-	DPrintf("Server %v first scan gids: %v, gidshards: %v", sc.me, gids, gidshards)
+	DPrintf("Server %v %p first scan gids: %v, gidshards: %v", sc.me, sc, gids, gidshards)
 	// second scan
 	for i := 0; i < numGroups; i++ {
 		if gids[i] == 0 {
@@ -296,7 +302,7 @@ func (sc *ShardCtrler) balance() {
 			}
 		}
 	}
-	DPrintf("Server %v second scan gids: %v, gidshards: %v", sc.me, gids, gidshards)
+	DPrintf("Server %v %p second scan gids: %v, gidshards: %v", sc.me, sc, gids, gidshards)
 	sc.configs[len(sc.configs) - 1] = config
 }
 
@@ -308,9 +314,9 @@ func (sc *ShardCtrler) executeJoin(cmd Op) {
 		newConfig.Groups[gid] = servers
 	}
 	sc.configs = append(sc.configs, newConfig)
-	DPrintf("Server %v execute join cmd: %v, before: config: %v", sc.me, cmd, sc.configs[len(sc.configs) - 1])
+	DPrintf("Server %v %p execute join cmd: %v, before: config: %v", sc.me, sc, cmd, sc.configs[len(sc.configs) - 1])
 	sc.balance()
-	DPrintf("Server %v execute join cmd: %v, after: config: %v", sc.me, cmd, sc.configs[len(sc.configs) - 1])
+	DPrintf("Server %v %p execute join cmd: %v, after: config: %v", sc.me, sc, cmd, sc.configs[len(sc.configs) - 1])
 }
 
 func (sc *ShardCtrler) executeLeave(cmd Op) {
@@ -361,7 +367,7 @@ func (sc *ShardCtrler) engineStart() {
 					sc.executeMove(cmd)
 				}
 			}
-			DPrintf("Server %v receive cmd: %v, clientSequences: %v", sc.me, cmd, cmd.SequenceNum)
+			DPrintf("Server %v %p receive cmd: %v, clientSequences: %v", sc.me, sc, cmd, cmd.SequenceNum)
 			if cmd.SequenceNum > sc.clientSequences[cmd.ClientId] {
 				sc.clientSequences[cmd.ClientId] = cmd.SequenceNum
 			}

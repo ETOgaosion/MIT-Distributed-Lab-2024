@@ -3,6 +3,7 @@ package shardkv
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -255,6 +256,7 @@ func TestSnapshot5B(t *testing.T) {
 	cfg.join(1)
 	cfg.join(2)
 	cfg.leave(0)
+	log.Printf("join 1 join 2 leave 0")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -265,6 +267,7 @@ func TestSnapshot5B(t *testing.T) {
 
 	cfg.leave(1)
 	cfg.join(0)
+	log.Printf("leave 1 join 0")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -482,6 +485,7 @@ func TestConcurrent2_5B(t *testing.T) {
 		ka[i] = strconv.Itoa(i) // ensure multiple shards
 		va[i] = randstring(1)
 		ck.Put(ka[i], va[i])
+		log.Printf("finish %v", i)
 	}
 
 	var done int32
@@ -502,6 +506,8 @@ func TestConcurrent2_5B(t *testing.T) {
 		go ff(i, ck1)
 	}
 
+	log.Printf("finish make clients")
+
 	cfg.leave(0)
 	cfg.leave(2)
 	time.Sleep(3000 * time.Millisecond)
@@ -514,11 +520,15 @@ func TestConcurrent2_5B(t *testing.T) {
 	cfg.leave(2)
 	time.Sleep(3000 * time.Millisecond)
 
+	log.Printf("finish join leave")
+
 	cfg.ShutdownGroup(1)
 	cfg.ShutdownGroup(2)
 	time.Sleep(1000 * time.Millisecond)
 	cfg.StartGroup(1)
 	cfg.StartGroup(2)
+
+	log.Printf("finish shutdown restart")
 
 	time.Sleep(2 * time.Second)
 
@@ -575,12 +585,16 @@ func TestConcurrent3_5B(t *testing.T) {
 		cfg.join(2)
 		cfg.join(1)
 		time.Sleep(time.Duration(rand.Int()%900) * time.Millisecond)
+
+		D2Printf("ShutDown and Restart")
 		cfg.ShutdownGroup(0)
 		cfg.ShutdownGroup(1)
 		cfg.ShutdownGroup(2)
 		cfg.StartGroup(0)
 		cfg.StartGroup(1)
 		cfg.StartGroup(2)
+
+		D2Printf("ShutDown and Restart finish")
 
 		time.Sleep(time.Duration(rand.Int()%900) * time.Millisecond)
 		cfg.leave(1)
