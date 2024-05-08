@@ -66,7 +66,7 @@ func (ck *Clerk) Query(num int) Config {
 	for !ok || reply.Err != OK {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
 		ck.GetState()
-		ok = ck.servers[ck.LeaderId].Call("KVServer.Get", &args, &reply)
+		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Query", &args, &reply)
 		DPrintf("Client %d retry Query %d from %d reply.Err: %s", ck.ClientId, num, ck.LeaderId, reply.Err)
 	}
 	if ok {
@@ -91,7 +91,7 @@ func (ck *Clerk) Join(servers map[int][]string) {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
 		ck.GetState()
 		DPrintf("Client %d retry Join %v from %d reply.Err: %s", ck.ClientId, servers, ck.LeaderId, reply.Err)
-		ok = ck.servers[ck.LeaderId].Call("KVServer.Get", &args, &reply)
+		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Join", &args, &reply)
 	}
 	if ok {
 		ck.SequenceNum++
@@ -114,7 +114,7 @@ func (ck *Clerk) Leave(gids []int) {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
 		ck.GetState()
 		DPrintf("Client %d retry Leave %v from %d reply.Err: %s", ck.ClientId, gids, ck.LeaderId, reply.Err)
-		ok = ck.servers[ck.LeaderId].Call("KVServer.Get", &args, &reply)
+		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Leave", &args, &reply)
 	}
 	if ok {
 		ck.SequenceNum++
@@ -138,7 +138,7 @@ func (ck *Clerk) Move(shard int, gid int) {
 		ck.LeaderId = (ck.LeaderId + 1) % int64(len(ck.servers))
 		ck.GetState()
 		DPrintf("Client %d retry Move %v %v from %d reply.Err: %s", ck.ClientId, shard, gid, ck.LeaderId, reply.Err)
-		ok = ck.servers[ck.LeaderId].Call("KVServer.Get", &args, &reply)
+		ok = ck.servers[ck.LeaderId].Call("ShardCtrler.Move", &args, &reply)
 	}
 	if ok {
 		ck.SequenceNum++

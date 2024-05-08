@@ -668,7 +668,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (3B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	DPrintf("Server %v (Term: %v, State: %v) Start: %v", rf.me, rf.currentTerm, rf.state, command)
 	if rf.state != leader {
 		isLeader = false
 	} else {
@@ -717,6 +716,7 @@ func (rf *Raft) stateChange(newState State) {
 		if rf.state != candidate {
 			log.Fatalf("Server %v (Term %v) Invalid state change to leader from %v", rf.me, rf.currentTerm, rf.state)
 		}
+		log.Printf("Server %v (Term %v) become leader", rf.me, rf.currentTerm)
 		rf.state = leader
 		rf.nextIndex = make([]int, len(rf.peers))
 		rf.matchIndex = make([]int, len(rf.peers))

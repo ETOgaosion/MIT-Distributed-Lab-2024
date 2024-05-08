@@ -23,6 +23,7 @@ type Op struct {
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
 	CmdType int8
+	// Get/Put/Append
 	ClientId int64
 	SequenceNum int64
 	Key string
@@ -64,18 +65,17 @@ type ShardKV struct {
 }
 
 // for faster leader recognization
+// should be in lock
 func (kv *ShardKV) isLeader() bool {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
 	_, isLeader := kv.rf.GetState()
 	return isLeader
 }
 
 // common action for Get, Put, Append, wait for engine extract raft's output and manage with kv storage
-func (kv *ShardKV) waitCmd(cmd Op) OpReply {
-	kv.mu.Lock()
+func (kv *ShardKV) waitCmd(index int64, cmd Op) OpReply {
 	ch := make(chan OpReply, 1)
-	kv.waitChannels[cmd.ClientId] = ch
+	kv.mu.Lock()
+	kv.waitChannels[index] = ch
 	kv.mu.Unlock()
 	
 	select {
@@ -84,12 +84,12 @@ func (kv *ShardKV) waitCmd(cmd Op) OpReply {
 			res.Err = ErrCmd
 		}
 		kv.mu.Lock()
-		delete(kv.waitChannels, cmd.ClientId)
+		delete(kv.waitChannels, index)
 		kv.mu.Unlock()
 		return res
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 		kv.mu.Lock()
-		delete(kv.waitChannels, cmd.ClientId)
+		delete(kv.waitChannels, index)
 		kv.mu.Unlock()
 		res := OpReply{
 			Err: ErrTimeout,
@@ -111,18 +111,27 @@ func (kv *ShardKV) checkShard(key string) (bool, bool) {
 	return true, true
 }
 
+// =================== RPC Receivers ==================
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
-	DPrintf("Server %d Get request: key: %s, client ID: %d, sequence num: %d", kv.me, args.Key, args.ClientId, args.SequenceNum)
 	kv.mu.Lock()
+	DPrintf("Server %d gid: %d (isLeader: %v) Get request: key: %s, client ID: %d, sequence num: %d", kv.me, kv.gid, kv.isLeader(), args.Key, args.ClientId, args.SequenceNum)
+	if !kv.isLeader() {
+		reply.Err = ErrWrongLeader
+		DPrintf("Server %d gid: %d (isLeader: %v) Get reply: key: %s, client ID: %d, sequence num: %d, err: %s", kv.me, kv.gid, kv.isLeader(), args.Key, args.ClientId, args.SequenceNum, reply.Err)
+		kv.mu.Unlock()
+		return
+	}
 	valid, ready := kv.checkShard(args.Key)
 	if !valid {
 		reply.Err = ErrWrongGroup
+		DPrintf("Server %d gid: %d (isLeader: %v) Get reply: key: %s, client ID: %d, sequence num: %d, err: %s", kv.me, kv.gid, kv.isLeader(), args.Key, args.ClientId, args.SequenceNum, reply.Err)
 		kv.mu.Unlock()
 		return
 	}
 	if !ready {
 		reply.Err = ErrShardNotReady
+		DPrintf("Server %d gid: %d (isLeader: %v) Get reply: key: %s, client ID: %d, sequence num: %d, err: %s", kv.me, kv.gid, kv.isLeader(), args.Key, args.ClientId, args.SequenceNum, reply.Err)
 		kv.mu.Unlock()
 		return
 	}
@@ -139,20 +148,25 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		SequenceNum: args.SequenceNum,
 		Key: args.Key,
 	}
-	_, _, isLeader := kv.rf.Start(cmd)
+	index, _, isLeader := kv.rf.Start(cmd)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	res := kv.waitCmd(cmd)
+	res := kv.waitCmd(int64(index), cmd)
 	reply.Err, reply.Value = res.Err, res.Value
-	DPrintf("Server %d Get reply: key: %s, client ID: %d, sequence num: %d, err: %s, value: %s", kv.me, args.Key, args.ClientId, args.SequenceNum, reply.Err, reply.Value)
+	DPrintf("Server %d gid: %d (isLeader: %v) Get reply: key: %s, client ID: %d, sequence num: %d, err: %s, value: %s", kv.me, kv.gid, kv.isLeader(), args.Key, args.ClientId, args.SequenceNum, reply.Err, reply.Value)
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
-	DPrintf("Server %d %s request: key: %s, value: %s, client ID: %d, sequence num: %d", kv.me, args.Op, args.Key, args.Value, args.ClientId, args.SequenceNum)
 	kv.mu.Lock()
+	DPrintf("Server %d gid: %d (isLeader: %v) %s request: key: %s, value: %s, client ID: %d, sequence num: %d, isLeader: %v", kv.me, kv.gid, kv.isLeader(), args.Op, args.Key, args.Value, args.ClientId, args.SequenceNum, kv.isLeader())
+	if !kv.isLeader() {
+		reply.Err = ErrWrongLeader
+		kv.mu.Unlock()
+		return
+	}
 	valid, ready := kv.checkShard(args.Key)
 	if !valid {
 		reply.Err = ErrWrongGroup
@@ -184,28 +198,181 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		log.Fatalf("Invalid operation: %s", args.Op)
 		return
 	}
-	_, _, isLeader := kv.rf.Start(cmd)
+	index, _, isLeader := kv.rf.Start(cmd)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	res := kv.waitCmd(cmd)
+	res := kv.waitCmd(int64(index), cmd)
 	reply.Err = res.Err
-	DPrintf("Server %d %s reply: key: %s, value: %s, client ID: %d, sequence num: %d, err: %s", kv.me, args.Op, args.Key, args.Value, args.ClientId, args.SequenceNum, reply.Err)
+	DPrintf("Server %d gid: %d (isLeader: %v) %s reply: key: %s, value: %s, client ID: %d, sequence num: %d, err: %s", kv.me, kv.gid, kv.isLeader(), args.Op, args.Key, args.Value, args.ClientId, args.SequenceNum, reply.Err)
 }
 
-func (kv *ShardKV) SendShard(args *SendShardArgs, reply *SendShardReply) {
+func (kv *ShardKV) InstallShard(args *InstallShardArgs, reply *InstallShardReply) {
 	// Your code here.
 	kv.mu.Lock()
+	DPrintf("Server %d gid: %d (isLeader: %v) receive install shard request: num: %v, dest: %v, src: %v, shards: %v", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards)
+	if !kv.isLeader() {
+		reply.Err = ErrWrongLeader
+		DPrintf("Server %d gid: %d (isLeader: %v) reply install shard request: num: %v, dest: %v, src: %v, shards: %v, err: %s", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards, reply.Err)
+		kv.mu.Unlock()
+		return
+	}
+	if kv.curConfig.Num < args.Num {
+		// we fall behind others, let them retry later, do not delete them
+		reply.Err = OK
+		DPrintf("Server %d gid: %d (isLeader: %v) reply install shard request: num: %v, dest: %v, src: %v, shards: %v, err: %s kv.curConfig.Num %v < args.Num %v", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards, reply.Err, kv.curConfig.Num, args.Num)
+		kv.mu.Unlock()
+		return
+	}
+	if kv.curConfig.Num > args.Num {
+		// we fall behind others, let them retry later, do not delete them
+		reply.Err = OK
+		DPrintf("Server %d gid: %d (isLeader: %v) reply install shard request: num: %v, dest: %v, src: %v, shards: %v, err: %s kv.curConfig.Num %v > args.Num %v", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards, reply.Err, kv.curConfig.Num, args.Num)
+		kv.mu.Unlock()
+		deleteArgs := kv.generateDeleteShardArgs(args)
+		go kv.sendDeleteShard(&deleteArgs)
+		return
+	}
+	for _, shard := range args.Shards {
+		if kv.shardStates[shard] == Serving {
+			reply.Err = OK
+			DPrintf("Server %d gid: %d (isLeader: %v) reply install shard request: num: %v, dest: %v, src: %v, shards: %v, err: %s Serving", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards, reply.Err)
+			kv.mu.Unlock()
+			delteArgs := kv.generateDeleteShardArgs(args)
+			go kv.sendDeleteShard(&delteArgs)
+			return
+		}
+	}
+	kv.mu.Unlock()
+	index, _, isLeader := kv.rf.Start(*args)
+	log.Printf("Server %d gid: %d (isLeader: %v) start install shard %v index %v", kv.me, kv.gid, kv.isLeader(), args.Num, index)
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	ch := make(chan OpReply, 1)
+	kv.mu.Lock()
+	kv.waitChannels[int64(index)] = ch
+	kv.mu.Unlock()
+	select {
+	case res := <-ch:
+		if res.Err == OK {
+			reply.Err = OK
+			deleteArgs := kv.generateDeleteShardArgs(args)
+			go kv.sendDeleteShard(&deleteArgs)
+			kv.mu.Lock()
+			delete(kv.waitChannels, int64(index))
+			kv.mu.Unlock()
+			return
+		} else {
+			reply.Err = res.Err
+			kv.mu.Lock()
+			delete(kv.waitChannels, int64(index))
+			kv.mu.Unlock()
+			return
+		}
+	case <-time.After(50 * time.Millisecond):
+		reply.Err = ErrTimeout
+		return
+	}
+}
+
+func (kv *ShardKV) DeleteShard(args *DeleteShardArgs, reply *DeleteShardReply) {
+	kv.mu.Lock()
+	DPrintf("Server %d gid: %d (isLeader: %v) receive delete shard request: num: %v, dest: %v, src: %v, shards: %v", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards)
 	if !kv.isLeader() {
 		reply.Err = ErrWrongLeader
 		kv.mu.Unlock()
 		return
 	}
+	if kv.curConfig.Num > args.Num {
+		reply.Err = OK
+		kv.mu.Unlock()
+		return
+	}
+	for _, shards := range args.Shards {
+		if kv.shardStates[shards] == Serving {
+			reply.Err = OK
+			kv.mu.Unlock()
+			return
+		}
+	}
 	kv.mu.Unlock()
-	reply.Err = OK
-
+	index, _, isLeader := kv.rf.Start(*args)
+	log.Printf("Server %d gid: %d (isLeader: %v) start delete shard %v index %v", kv.me, kv.gid, kv.isLeader(), args.Num, index)
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	ch := make(chan OpReply, 1)
+	kv.mu.Lock()
+	DPrintf("Server %d gid: %d (isLeader: %v) start delete shard %v index %v", kv.me, kv.gid, kv.isLeader(), args.Num, index)
+	kv.waitChannels[int64(index)] = ch
+	kv.mu.Unlock()
+	select {
+	case res := <-ch:
+		if res.Err == OK {
+			reply.Err = OK
+			kv.mu.Lock()
+			delete(kv.waitChannels, int64(index))
+			kv.mu.Unlock()
+			return
+		} else {
+			reply.Err = res.Err
+			kv.mu.Lock()
+			delete(kv.waitChannels, int64(index))
+			kv.mu.Unlock()
+			return
+		}
+	case <-time.After(50 * time.Millisecond):
+		reply.Err = ErrTimeout
+		return
+	}
 }
+
+
+// =================== RPC sender ====================
+func (kv *ShardKV) sendInstallShard(args InstallShardArgs) {
+	DPrintf("Server %d gid: %d (isLeader: %v) send install shard request: num: %v, dest: %v, src: %v, shards: %v", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards)
+	for _, server := range args.Dest {
+		srv := kv.make_end(server)
+		var reply InstallShardReply
+		ok := srv.Call("ShardKV.InstallShard", &args, &reply)
+		DPrintf("Server %d gid: %d (isLeader: %v) send install shard request: num: %v, dest: %v server: %v, src: %v, shards: %v, reply: %v", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, server, args.Src, args.Shards, reply)
+		if ok && reply.Err == OK {
+			return
+		}
+	}
+}
+
+func (kv *ShardKV) generateDeleteShardArgs(args *InstallShardArgs) DeleteShardArgs {
+	arg := DeleteShardArgs {
+		Num: args.Num,
+		Dest: args.Src,
+		Src: args.Dest,
+		Shards: args.Shards,
+		Keys: make([]string, 0),
+	}
+	for k := range args.Data {
+		arg.Keys = append(arg.Keys, k)
+	}
+	return arg
+}
+
+// send delete shard request, use the install shard args directly
+func (kv *ShardKV) sendDeleteShard(args *DeleteShardArgs) {
+	DPrintf("Server %d gid: %d (isLeader: %v) send delete shard request: num: %v, dest: %v, src: %v, shards: %v", kv.me, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards)
+	for _, server := range args.Dest {
+		srv := kv.make_end(server)
+		var reply DeleteShardReply
+		ok := srv.Call("ShardKV.DeleteShard", args, &reply)
+		if ok && reply.Err == OK {
+			return
+		}
+	}
+}
+
 
 // the tester calls Kill() when a ShardKV instance won't
 // be needed again. you are not required to do anything
@@ -226,7 +393,7 @@ func (kv *ShardKV) killed() bool {
 func (kv *ShardKV) isRepeated(clientId, sequenceNum int64) bool {
 	seq, ok := kv.clientSequences[clientId]
 	if ok && seq >= sequenceNum {
-		DPrintf("Server %v receive repeated cmd from ClientId: %v sequenceNum: %v seq: %v", kv.me, clientId, sequenceNum, seq)
+		DPrintf("Server %d gid: %d (isLeader: %v) receive repeated cmd from ClientId: %v sequenceNum: %v seq: %v", kv.me, kv.gid, kv.isLeader(), clientId, sequenceNum, seq)
 		return true
 	}
 	return false
@@ -238,6 +405,9 @@ func (kv *ShardKV) getSnapShot() []byte {
 	e := labgob.NewEncoder(w)
 	e.Encode(kv.clientSequences)
 	e.Encode(kv.kv)
+	e.Encode(kv.shardStates)
+	e.Encode(kv.lastConfig)
+	e.Encode(kv.curConfig)
 	snapshot := w.Bytes()
 	return snapshot
 }
@@ -251,59 +421,161 @@ func (kv *ShardKV) readSnapShot(data []byte) {
 	d := labgob.NewDecoder(r)
 	e_decode_clientseq := d.Decode(&kv.clientSequences)
 	e_decode_kv := d.Decode(&kv.kv)
-	has_err := false
-	if e_decode_clientseq != nil {
-		has_err = true
-		log.Printf("decode clientseq error %v", e_decode_clientseq)
-	}
-	if e_decode_kv != nil {
-		has_err = true
-		log.Printf("decode kv error %v", e_decode_kv)
-	}
-	if has_err {
+	e_decode_shardstates := d.Decode(&kv.shardStates)
+	e_decode_lastconfig := d.Decode(&kv.lastConfig)
+	e_decode_curconfig := d.Decode(&kv.curConfig)
+	if e_decode_clientseq != nil || e_decode_kv != nil || e_decode_shardstates != nil || e_decode_lastconfig != nil || e_decode_curconfig != nil {
+		log.Printf("decode error")
 		debug.PrintStack()
 		os.Exit(-1)
 	}
 }
 
+// engine handlers
+// should be in lock
+func (kv *ShardKV) handleOps(op Op) OpReply {
+	DPrintf("Server %d gid: %d (isLeader: %v) receive op: key: %s, client ID: %d, sequence num: %d, cmd type: %d", kv.me, kv.gid, kv.isLeader(), op.Key, op.ClientId, op.SequenceNum, op.CmdType)
+	clientId := op.ClientId
+	// NOTICE: unsafe.Sizeof do not count the actual size of ptr types
+	kv.currentBytes += int(unsafe.Sizeof(op)) + len(op.Key) + len(op.Value)
+	if op.SequenceNum < kv.clientSequences[clientId] {
+		return OpReply{
+			CmdType: op.CmdType,
+			ClientId: op.ClientId,
+			SequenceNum: op.SequenceNum,
+			Err: OK,
+			Value: kv.kv[op.Key],
+		}
+	}
+	if op.CmdType == PutCmd || op.CmdType == AppendCmd {
+		if !kv.isRepeated(clientId, op.SequenceNum) {
+			if op.CmdType == PutCmd {
+				kv.kv[op.Key] = op.Value
+			} else if op.CmdType == AppendCmd {
+				kv.kv[op.Key] += op.Value
+			}
+		}
+	}
+	if op.SequenceNum > kv.clientSequences[clientId] {
+		kv.clientSequences[clientId] = op.SequenceNum
+	}
+	res := OpReply {
+		CmdType: op.CmdType,
+		ClientId: op.ClientId,
+		SequenceNum: op.SequenceNum,
+		Err: OK,
+		Value: kv.kv[op.Key],
+	}
+	DPrintf("Server %d gid: %d (isLeader: %v) reply: key: %s, client ID: %d, sequence num: %d, err: %s, value: %s", kv.me, kv.gid, kv.isLeader(), op.Key, op.ClientId, op.SequenceNum, res.Err, res.Value)
+	return res
+}
+
+// should be in lock
+func (kv *ShardKV) handleInstallShard(args InstallShardArgs) OpReply {
+	DPrintf("Server %d gid: %d (isLeader: %v) install shard %v %v", kv.me, kv.gid, kv.isLeader(), args.Num, args)
+	if args.Num < kv.lastConfig.Num {
+		return OpReply {
+			Err: OK,
+		}
+	}
+	if args.Num > kv.curConfig.Num || kv.readyForNewSync() {
+		return OpReply {
+			Err: ErrShardNotReady,
+		}
+	}
+	for k, v := range args.Data {
+		kv.kv[k] = v
+	}
+	for k, v := range args.ClientSequences {
+		if v > kv.clientSequences[k] {
+			kv.clientSequences[k] = v
+		}
+	}
+	for _, shard := range args.Shards {
+		kv.shardStates[shard] = Serving
+	}
+	return OpReply {
+		Err: OK,
+	}
+}
+
+// should be in lock
+func (kv *ShardKV) handleDeleteShard(args DeleteShardArgs) OpReply {
+	if args.Num < kv.lastConfig.Num {
+		return OpReply {
+			Err: OK,
+		}
+	}
+	if args.Num > kv.curConfig.Num || kv.readyForNewSync() {
+		return OpReply {
+			Err: ErrShardNotReady,
+		}
+	}
+	DPrintf("Server %d gid: %d (isLeader: %v) delete shard %v %v", kv.me, kv.gid, kv.isLeader(), args.Num, args)
+	for _, k := range args.Keys {
+		delete(kv.kv, k)
+	}
+	for _, shard := range args.Shards {
+		kv.shardStates[shard] = Serving
+	}
+	return OpReply {
+		Err: OK,
+	}
+}
+
+// should be in lock
+func (kv *ShardKV) updateShardsState() {
+	if kv.lastConfig.Num == 0 {
+		return
+	}
+	for shard, gid := range kv.curConfig.Shards {
+		lastGid := kv.lastConfig.Shards[shard]
+		if lastGid == kv.gid && gid != kv.gid {
+			kv.shardStates[shard] = Offering
+		} else if lastGid != kv.gid && gid == kv.gid {
+			kv.shardStates[shard] = Pulling
+		}
+	}
+
+}
+
+// should be in lock
+func (kv *ShardKV) handleConfig(config shardctrler.Config) {
+	DPrintf("Server %d gid: %d (isLeader: %v) handle config: %v", kv.me, kv.gid, kv.isLeader(), config)
+	if config.Num == kv.curConfig.Num + 1 && kv.readyForNewSync() {
+		kv.lastConfig = kv.curConfig
+		kv.curConfig = config
+		kv.updateShardsState()
+		DPrintf("Server %d gid: %d (isLeader: %v) update config to %v", kv.me, kv.gid, kv.isLeader(), config)
+	}
+}
+
+// start raft engine, handle raft messages and execute main kv operations
 func (kv *ShardKV) engineStart() {
 	for !kv.killed() {
 		msg := <-kv.applyCh
 		if msg.CommandValid {
-			op := msg.Command.(Op)
-			clientId := op.ClientId
 			kv.mu.Lock()
-			// NOTICE: unsafe.Sizeof do not count the actual size of ptr types
-			kv.currentBytes += int(unsafe.Sizeof(op)) + len(op.Key) + len(op.Value)
-			if op.SequenceNum < kv.clientSequences[clientId] {
-				continue
-			}
-			if op.CmdType == PutCmd || op.CmdType == AppendCmd {
-				if !kv.isRepeated(clientId, op.SequenceNum) {
-					if op.CmdType == PutCmd {
-						kv.kv[op.Key] = op.Value
-					} else if op.CmdType == AppendCmd {
-						kv.kv[op.Key] += op.Value
-					}
-				}
-			}
-			if op.SequenceNum > kv.clientSequences[clientId] {
-				kv.clientSequences[clientId] = op.SequenceNum
-			}
-			_, ok := kv.waitChannels[clientId]
-			if ok {
-				res := OpReply {
-					CmdType: op.CmdType,
-					ClientId: op.ClientId,
-					SequenceNum: op.SequenceNum,
+			DPrintf("Server %d gid: %d (isLeader: %v) receive msg: %v %v", kv.me, kv.gid, kv.isLeader(), msg.CommandIndex, msg.Command)
+			var res OpReply
+			if _, ok := msg.Command.(Op); ok {
+				res = kv.handleOps(msg.Command.(Op))
+			} else if _, ok := msg.Command.(InstallShardArgs); ok {
+				res = kv.handleInstallShard(msg.Command.(InstallShardArgs))
+			} else if _, ok := msg.Command.(DeleteShardArgs); ok {
+				res = kv.handleDeleteShard(msg.Command.(DeleteShardArgs))
+			} else if _, ok := msg.Command.(shardctrler.Config); ok {
+				res = OpReply{
 					Err: OK,
-					Value: kv.kv[op.Key],
 				}
-				DPrintf("Server %d reply: key: %s, client ID: %d, sequence num: %d, err: %s, value: %s", kv.me, op.Key, op.ClientId, op.SequenceNum, res.Err, res.Value)
-				kv.waitChannels[clientId] <- res
+				kv.handleConfig(msg.Command.(shardctrler.Config))
+			}
+			ch, ok := kv.waitChannels[int64(msg.CommandIndex)]
+			if ok {
+				ch <- res
 			}
 			if kv.maxraftstate > 0 && kv.persister.RaftStateSize() > kv.maxraftstate && kv.currentBytes > kv.maxraftstate {
-				DPrintf("Server %d start snapshot, kv.persister.RaftStateSize(): %v, kv.currentBytes: %v, kv.maxraftstate: %v", kv.me, kv.persister.RaftStateSize(), kv.currentBytes, kv.maxraftstate)
+				DPrintf("Server %d gid: %d (isLeader: %v) start snapshot, kv.persister.RaftStateSize(): %v, kv.currentBytes: %v, kv.maxraftstate: %v", kv.me, kv.gid, kv.isLeader(), kv.persister.RaftStateSize(), kv.currentBytes, kv.maxraftstate)
 				snapshot := kv.getSnapShot()
 				kv.currentBytes = 0
 				kv.mu.Unlock()
@@ -316,6 +588,98 @@ func (kv *ShardKV) engineStart() {
 			kv.readSnapShot(msg.Snapshot)
 			kv.mu.Unlock()
 		}
+	}
+}
+
+// should be in lock
+func (kv *ShardKV) readyForNewSync() bool {
+	for _, v := range kv.shardStates {
+		if v != Serving {
+			return false
+		}
+	}
+	return true
+}
+
+func (kv *ShardKV) syncConfig() {
+	for !kv.killed() {
+		kv.mu.Lock()
+		if !kv.isLeader() || !kv.readyForNewSync() {
+			kv.mu.Unlock()
+			time.Sleep(UpdateConfigInterval)
+			continue
+		}
+		configNum := kv.curConfig.Num
+		config := kv.mck.Query(configNum + 1)
+		if config.Num > configNum {
+			DPrintf("Server %d gid: %d (isLeader: %v) receive new config: %v %v, configNum: %v", kv.me, kv.gid, kv.isLeader(), config.Num, config, configNum)
+			kv.mu.Unlock()
+			kv.rf.Start(config)
+		} else {
+			kv.mu.Unlock()
+		}
+		time.Sleep(UpdateConfigInterval)
+	}
+}
+
+// should be in lock
+func (kv *ShardKV) needReconfigure() bool {
+	for _, v := range kv.shardStates {
+		if v == Offering {
+			return true
+		}
+	}
+	return false
+}
+
+func (kv *ShardKV) prepareInstallShardArgs() []InstallShardArgs {
+	misplacedShards := make(map[int][]int)
+	for shard, gid := range kv.curConfig.Shards {
+		lastGid := kv.lastConfig.Shards[shard]
+		if lastGid == kv.gid && gid != kv.gid {
+			misplacedShards[gid] = append(misplacedShards[gid], shard)
+		}
+	}
+	args := make([]InstallShardArgs, 0)
+	for gid, shards := range misplacedShards {
+		shardMap := make(map[int]bool)
+		for _, shard := range shards {
+			shardMap[shard] = true
+		}
+		arg := InstallShardArgs {
+			Num: kv.curConfig.Num,
+			Dest: kv.curConfig.Groups[gid],
+			Src: kv.lastConfig.Groups[kv.gid],
+			Shards: shards,
+			Data: make(map[string]string),
+			ClientSequences: int64TableDeepCopy(kv.clientSequences),
+		}
+		for k, v := range kv.kv {
+			if shardMap[key2shard(k)] {
+				arg.Data[k] = v
+			}
+		}
+		args = append(args, arg)
+	}
+	log.Printf("Server %d gid: %d (isLeader: %v) prepare install shard args: %v", kv.me, kv.gid, kv.isLeader(), args)
+	return args
+}
+
+// send shards thread, always check if we need to send shards to others
+func (kv *ShardKV) sendShards() {
+	for !kv.killed() {
+		kv.mu.Lock()
+		if !kv.isLeader() || !kv.needReconfigure() {
+			kv.mu.Unlock()
+			time.Sleep(InstallShardsInterval)
+			continue
+		}
+		argsArray := kv.prepareInstallShardArgs()
+		kv.mu.Unlock()
+		for _, args := range argsArray {
+			kv.sendInstallShard(args)
+		}
+		time.Sleep(InstallShardsInterval)
 	}
 }
 
@@ -350,6 +714,9 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	labgob.Register(Op{})
+	labgob.Register(InstallShardArgs{})
+	labgob.Register(DeleteShardArgs{})
+	labgob.Register(shardctrler.Config{})
 
 	kv := new(ShardKV)
 	kv.me = me
@@ -365,13 +732,24 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.persister = persister
 	kv.currentBytes = 0
 
+	kv.lastConfig = shardctrler.Config{}
+	kv.curConfig = shardctrler.Config{}
+	kv.shardStates = make(map[int]int8)
+	for i := 0; i < shardctrler.NShards; i++ {
+		kv.shardStates[i] = Serving
+	}
+
 	// Use something like this to talk to the shardctrler:
 	kv.mck = shardctrler.MakeClerk(kv.ctrlers)
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
+	kv.readSnapShot(persister.ReadSnapshot())
+
 	go kv.engineStart()
+	go kv.syncConfig()
+	go kv.sendShards()
 
 	return kv
 }

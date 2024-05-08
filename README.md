@@ -40,7 +40,7 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
         - golang has a poor `unsafe.Sizeof`
 - [ ] Lab5: Sharded Key/Value Service
     - Recommend [this blog](https://www.cnblogs.com/pxlsdz/p/15685837.html)
-    - [ ] Lab5A: The Controller and Static Sharding
+    - [x] Lab5A: The Controller and Static Sharding
         - **TC: $O(2n)$ SC: $O(1)$ Shard rebalance algorithm (Not like others' costly $O(n^2)$): Calculate `avg` and `remains` number of shards in gids first, Use 0 gid as a tmp storage for extra shards (larger than `avg + 1` if still got `remains`, larger than avg if `remains` is 0), then move all these shards to gid shards less than `avg`**
  
 Evaluation Level (due to my own experience, regardless of official assessment):

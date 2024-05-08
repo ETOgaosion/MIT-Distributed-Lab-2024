@@ -56,15 +56,16 @@ type GetReply struct {
 	Value string
 }
 
-type SendShardArgs struct {
+type InstallShardArgs struct {
 	Num int
 	Dest []string
 	Src []string
+	Shards []int
 	ClientSequences map[int64]int64
 	Data map[string]string
 }
 
-type SendShardReply struct {
+type InstallShardReply struct {
 	Err string
 }
 
@@ -84,6 +85,9 @@ const (
 	GetCmd = 1
 	PutCmd = 2
 	AppendCmd = 3
+	InstallShardCmd = 4
+	DeleteShardCmd = 5
+	SyncConfigCmd = 6
 )
 
 type CmdType int8
@@ -98,7 +102,7 @@ type ShardNodeState int8
 
 const (
 	UpdateConfigInterval = 100 * time.Millisecond
-	SendShardsInterval = 150 * time.Millisecond
+	InstallShardsInterval = 150 * time.Millisecond
 )
 
 // which shard is a key in?
@@ -113,7 +117,15 @@ func key2shard(key string) int {
 	return shard
 }
 
-func tableDeepCopy(src map[string]string) map[string]string {
+func int64TableDeepCopy(src map[int64]int64) map[int64]int64 {
+	dst := make(map[int64]int64)
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func stringTableDeepCopy(src map[string]string) map[string]string {
 	dst := make(map[string]string)
 	for k, v := range src {
 		dst[k] = v

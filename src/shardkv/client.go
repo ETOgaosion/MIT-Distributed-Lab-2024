@@ -76,14 +76,16 @@ func (ck *Clerk) Get(key string) string {
 					return reply.Value
 				}
 				if ok && (reply.Err == ErrWrongGroup) {
-					ck.leaderIds[gid] = (leader + 1) % int64(len(servers))
+					time.Sleep(100 * time.Millisecond)
+					// ask controller for the latest configuration.
+					ck.config = ck.sm.Query(-1)
 					continue
 				}
 				ck.leaderIds[gid] = (leader + 1) % int64(len(servers))
 			} else {
 				ck.leaderIds[gid] = 0
 			}
-			for si := 0; si < len(servers) - 1; si++ {
+			for si := 0; si < len(servers); si++ {
 				srv := ck.make_end(servers[(int(ck.leaderIds[gid]) + si) % len(servers)])
 				var reply GetReply
 				ok := srv.Call("ShardKV.Get", &args, &reply)
@@ -103,7 +105,7 @@ func (ck *Clerk) Get(key string) string {
 		ck.config = ck.sm.Query(-1)
 	}
 
-	return ""
+	// return ""
 }
 
 // shared by Put and Append.
@@ -129,7 +131,9 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 					return
 				}
 				if ok && (reply.Err == ErrWrongGroup) {
-					ck.leaderIds[gid] = (leader + 1) % int64(len(servers))
+					time.Sleep(100 * time.Millisecond)
+					// ask controller for the latest configuration.
+					ck.config = ck.sm.Query(-1)
 					continue
 				}
 				ck.leaderIds[gid] = (leader + 1) % int64(len(servers))
