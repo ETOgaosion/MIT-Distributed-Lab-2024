@@ -105,7 +105,11 @@ const (
 	ClientRetryInterval = 100 * time.Millisecond
 	UpdateConfigInterval = 100 * time.Millisecond
 	InstallShardsInterval = 300 * time.Millisecond
+	EmptyTermCheckInterval = 300 * time.Millisecond
 )
+
+type EmptyOp struct {
+}
 
 // which shard is a key in?
 // please use this function,

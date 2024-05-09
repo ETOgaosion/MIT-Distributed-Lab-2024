@@ -119,6 +119,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		kv.mu.Unlock()
 		return
 	}
+	// Even if the server is not the leader, it can also judge whether the shard is misplaced or not ready
 	valid, ready := kv.checkShard(args.Key)
 	if !valid {
 		reply.Err = ErrWrongGroup
@@ -164,6 +165,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		kv.mu.Unlock()
 		return
 	}
+	// Even if the server is not the leader, it can also judge whether the shard is misplaced or not ready
 	valid, ready := kv.checkShard(args.Key)
 	if !valid {
 		reply.Err = ErrWrongGroup
@@ -390,7 +392,6 @@ func (kv *ShardKV) killed() bool {
 func (kv *ShardKV) isRepeated(clientId, sequenceNum int64) bool {
 	seq, ok := kv.clientSequences[clientId]
 	if ok && seq >= sequenceNum {
-		D2Printf("Server %v %p gid: %d (isLeader: %v) receive repeated cmd from ClientId: %v sequenceNum: %v seq: %v", kv.me, kv, kv.gid, kv.isLeader(), clientId, sequenceNum, seq)
 		return true
 	}
 	return false
@@ -433,7 +434,24 @@ func (kv *ShardKV) handleOps(op Op) OpReply {
 	DPrintf("Server %v %p gid: %d (isLeader: %v) receive op: key: %s, client ID: %d, sequence num: %d, cmd type: %d", kv.me, kv, kv.gid, kv.isLeader(), op.Key, op.ClientId, op.SequenceNum, op.CmdType)
 	clientId := op.ClientId
 	// NOTICE: unsafe.Sizeof do not count the actual size of ptr types
-	if op.SequenceNum < kv.clientSequences[clientId] {
+	valid, ready := kv.checkShard(op.Key)
+	if !valid {
+		return OpReply{
+			CmdType: op.CmdType,
+			ClientId: op.ClientId,
+			SequenceNum: op.SequenceNum,
+			Err: ErrWrongGroup,
+		}
+	}
+	if !ready {
+		return OpReply{
+			CmdType: op.CmdType,
+			ClientId: op.ClientId,
+			SequenceNum: op.SequenceNum,
+			Err: ErrShardNotReady,
+		}
+	}
+	if kv.isRepeated(clientId, op.SequenceNum) {
 		return OpReply{
 			CmdType: op.CmdType,
 			ClientId: op.ClientId,
@@ -443,12 +461,10 @@ func (kv *ShardKV) handleOps(op Op) OpReply {
 		}
 	}
 	if op.CmdType == PutCmd || op.CmdType == AppendCmd {
-		if !kv.isRepeated(clientId, op.SequenceNum) {
-			if op.CmdType == PutCmd {
-				kv.kv[op.Key] = op.Value
-			} else if op.CmdType == AppendCmd {
-				kv.kv[op.Key] += op.Value
-			}
+		if op.CmdType == PutCmd {
+			kv.kv[op.Key] = op.Value
+		} else if op.CmdType == AppendCmd {
+			kv.kv[op.Key] += op.Value
 		}
 	}
 	if op.SequenceNum > kv.clientSequences[clientId] {
@@ -603,6 +619,9 @@ func (kv *ShardKV) engineStart() {
 					Err: OK,
 				}
 				kv.handleConfig(msg.Command.(shardctrler.Config))
+			} else {
+				kv.mu.Unlock()
+				continue
 			}
 			ch, ok := kv.waitChannels[int64(msg.CommandIndex)]
 			if ok {
@@ -714,6 +733,19 @@ func (kv *ShardKV) sendShards() {
 	}
 }
 
+// check empty term thread
+func (kv *ShardKV) checkEmptyTerm() {
+	for !kv.killed() {
+		if !kv.isLeader() {
+			time.Sleep(EmptyTermCheckInterval)
+			continue
+		}
+		if !kv.rf.CheckEmptyTermLog() {
+			kv.rf.Start(EmptyOp{})
+		}
+		time.Sleep(EmptyTermCheckInterval)
+	}
+}
 
 // servers[] contains the ports of the servers in this group.
 //
@@ -748,6 +780,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	labgob.Register(InstallShardArgs{})
 	labgob.Register(DeleteShardArgs{})
 	labgob.Register(shardctrler.Config{})
+	labgob.Register(EmptyOp{})
 
 	kv := new(ShardKV)
 	kv.me = me
@@ -780,6 +813,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	go kv.engineStart()
 	go kv.syncConfig()
 	go kv.sendShards()
+	go kv.checkEmptyTerm()
 
 	return kv
 }

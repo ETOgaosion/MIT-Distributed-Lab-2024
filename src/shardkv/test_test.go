@@ -234,7 +234,7 @@ func TestJoinLeave5B(t *testing.T) {
 func TestSnapshot5B(t *testing.T) {
 	fmt.Printf("Test (5B): snapshots, join, and leave ...\n")
 
-	cfg := make_config(t, 3, false, 3000)
+	cfg := make_config(t, 3, false, 1000)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient(cfg.ctl)
@@ -304,7 +304,7 @@ func TestSnapshot5B(t *testing.T) {
 func TestMissChange5B(t *testing.T) {
 	fmt.Printf("Test (5B): servers miss configuration changes...\n")
 
-	cfg := make_config(t, 3, false, 5000)
+	cfg := make_config(t, 3, false, 1000)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient(cfg.ctl)
@@ -328,6 +328,7 @@ func TestMissChange5B(t *testing.T) {
 	cfg.ShutdownServer(0, 0)
 	cfg.ShutdownServer(1, 0)
 	cfg.ShutdownServer(2, 0)
+	log.Printf("shutdown all server1")
 
 	cfg.join(2)
 	cfg.leave(1)
@@ -352,6 +353,7 @@ func TestMissChange5B(t *testing.T) {
 	cfg.StartServer(0, 0)
 	cfg.StartServer(1, 0)
 	cfg.StartServer(2, 0)
+	log.Printf("Start all server1")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -359,12 +361,14 @@ func TestMissChange5B(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	log.Printf("check append 1")
 
 	time.Sleep(2 * time.Second)
 
 	cfg.ShutdownServer(0, 1)
 	cfg.ShutdownServer(1, 1)
 	cfg.ShutdownServer(2, 1)
+	log.Printf("shutdown all server 2")
 
 	cfg.join(0)
 	cfg.leave(2)
@@ -375,10 +379,12 @@ func TestMissChange5B(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	log.Printf("check append 2")
 
 	cfg.StartServer(0, 1)
 	cfg.StartServer(1, 1)
 	cfg.StartServer(2, 1)
+	log.Printf("Start all server 2")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])

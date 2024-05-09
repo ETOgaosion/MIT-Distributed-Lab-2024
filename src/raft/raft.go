@@ -704,6 +704,17 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	return index, term, isLeader
 }
 
+func (rf *Raft) CheckEmptyTermLog() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.currentTerm == rf.getLastLogTerm() {
+		return true
+	} else {
+		// log.Printf("Server %v %p (Term: %v) CheckEmptyTermLog: %v %v", rf.me, rf, rf.currentTerm, rf.currentTerm, rf.getLastLogTerm())
+		return false
+	}
+}
+
 // ========================== Extra ============================
 
 // the tester doesn't halt goroutines created by Raft after each test,
