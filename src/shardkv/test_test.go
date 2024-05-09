@@ -234,7 +234,7 @@ func TestJoinLeave5B(t *testing.T) {
 func TestSnapshot5B(t *testing.T) {
 	fmt.Printf("Test (5B): snapshots, join, and leave ...\n")
 
-	cfg := make_config(t, 3, false, 1000)
+	cfg := make_config(t, 3, false, 3000)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient(cfg.ctl)
@@ -304,7 +304,7 @@ func TestSnapshot5B(t *testing.T) {
 func TestMissChange5B(t *testing.T) {
 	fmt.Printf("Test (5B): servers miss configuration changes...\n")
 
-	cfg := make_config(t, 3, false, 1000)
+	cfg := make_config(t, 3, false, 5000)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient(cfg.ctl)
@@ -485,7 +485,6 @@ func TestConcurrent2_5B(t *testing.T) {
 		ka[i] = strconv.Itoa(i) // ensure multiple shards
 		va[i] = randstring(1)
 		ck.Put(ka[i], va[i])
-		log.Printf("finish %v", i)
 	}
 
 	var done int32

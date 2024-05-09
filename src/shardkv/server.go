@@ -3,11 +3,9 @@ package shardkv
 import (
 	"bytes"
 	"log"
-	"os"
 	"runtime/debug"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"6.5840/labgob"
 	"6.5840/labrpc"
@@ -61,7 +59,6 @@ type ShardKV struct {
 	shardStates map[int]int8
 
 	persister *raft.Persister
-	currentBytes int
 }
 
 // for faster leader recognization
@@ -234,6 +231,16 @@ func (kv *ShardKV) InstallShard(args *InstallShardArgs, reply *InstallShardReply
 		go kv.sendDeleteShard(&deleteArgs)
 		return
 	}
+	for _, shard := range args.Shards {
+		if kv.shardStates[shard] != Pulling {
+			reply.Err = OK
+			D2Printf("Server %v %p gid: %d (isLeader: %v) reply install shard request: num: %v, dest: %v, src: %v, shards: %v, err: %s, shard %v state %v != Pulling", kv.me, kv, kv.gid, kv.isLeader(), args.Num, args.Dest, args.Src, args.Shards, reply.Err, shard, kv.shardStates[shard])
+			kv.mu.Unlock()
+			deleteArgs := kv.generateDeleteShardArgs(args)
+			go kv.sendDeleteShard(&deleteArgs)
+			return
+		}
+	}
 	kv.mu.Unlock()
 	index, _, isLeader := kv.rf.Start(*args)
 	DPrintf("Server %v %p gid: %d (isLeader: %v) start install shard %v index %v", kv.me, kv, kv.gid, kv.isLeader(), args.Num, index)
@@ -280,6 +287,13 @@ func (kv *ShardKV) DeleteShard(args *DeleteShardArgs, reply *DeleteShardReply) {
 		reply.Err = OK
 		kv.mu.Unlock()
 		return
+	}
+	for _, shard := range args.Shards {
+		if kv.shardStates[shard] != Offering {
+			reply.Err = OK
+			kv.mu.Unlock()
+			return
+		}
 	}
 	kv.mu.Unlock()
 	index, _, isLeader := kv.rf.Start(*args)
@@ -408,9 +422,8 @@ func (kv *ShardKV) readSnapShot(data []byte) {
 	e_decode_lastconfig := d.Decode(&kv.lastConfig)
 	e_decode_curconfig := d.Decode(&kv.curConfig)
 	if e_decode_clientseq != nil || e_decode_kv != nil || e_decode_shardstates != nil || e_decode_lastconfig != nil || e_decode_curconfig != nil {
-		D2Printf("decode error")
 		debug.PrintStack()
-		os.Exit(-1)
+		log.Fatalf("decode error")
 	}
 }
 
@@ -420,7 +433,6 @@ func (kv *ShardKV) handleOps(op Op) OpReply {
 	DPrintf("Server %v %p gid: %d (isLeader: %v) receive op: key: %s, client ID: %d, sequence num: %d, cmd type: %d", kv.me, kv, kv.gid, kv.isLeader(), op.Key, op.ClientId, op.SequenceNum, op.CmdType)
 	clientId := op.ClientId
 	// NOTICE: unsafe.Sizeof do not count the actual size of ptr types
-	kv.currentBytes += int(unsafe.Sizeof(op)) + len(op.Key) + len(op.Value)
 	if op.SequenceNum < kv.clientSequences[clientId] {
 		return OpReply{
 			CmdType: op.CmdType,
@@ -596,10 +608,9 @@ func (kv *ShardKV) engineStart() {
 			if ok {
 				ch <- res
 			}
-			if kv.maxraftstate > 0 && kv.persister.RaftStateSize() > kv.maxraftstate && kv.currentBytes > kv.maxraftstate {
-				D2Printf("Server %v %p gid: %d (isLeader: %v) start snapshot, kv.persister.RaftStateSize(): %v, kv.currentBytes: %v, kv.maxraftstate: %v", kv.me, kv, kv.gid, kv.isLeader(), kv.persister.RaftStateSize(), kv.currentBytes, kv.maxraftstate)
+			if kv.maxraftstate > 0 && kv.persister.RaftStateSize() > kv.maxraftstate {
+				D2Printf("Server %v %p gid: %d (isLeader: %v) start snapshot, raft state size: %v", kv.me, kv, kv.gid, kv.isLeader(), kv.persister.RaftStateSize())
 				snapshot := kv.getSnapShot()
-				kv.currentBytes = 0
 				kv.mu.Unlock()
 				kv.rf.Snapshot(msg.CommandIndex, snapshot)
 			} else {
@@ -750,7 +761,6 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.clientSequences = make(map[int64]int64)
 	kv.waitChannels = make(map[int64]chan OpReply)
 	kv.persister = persister
-	kv.currentBytes = 0
 
 	kv.lastConfig = shardctrler.Config{}
 	kv.curConfig = shardctrler.Config{}

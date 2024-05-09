@@ -101,6 +101,8 @@ const (
 type ShardNodeState int8
 
 const (
+	EngineStepInterval = 100 * time.Millisecond
+	ClientRetryInterval = 100 * time.Millisecond
 	UpdateConfigInterval = 100 * time.Millisecond
 	InstallShardsInterval = 300 * time.Millisecond
 )

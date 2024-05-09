@@ -128,6 +128,10 @@ func (rf *Raft) GetState() (int, bool) {
 	return term, isleader
 }
 
+func (rf *Raft) isLeader() bool {
+	return rf.state == leader
+}
+
 // should be in lock
 func (rf *Raft) getFirstLogIndex() int {
 	// log always have 1 item, check no need
@@ -277,7 +281,13 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	logIndex := index - rf.getFirstLogIndex()
 	rf.lastIncludedIndex = rf.log[logIndex].Index
 	rf.lastIncludedTerm = rf.log[logIndex].Term
+	// if rf.isLeader() {
+	// 	log.Printf("Server %v %p (Term: %v) Snapshot: %v, raw log length: %v", rf.me, rf, rf.currentTerm, index, len(rf.log))
+	// }
 	rf.log = rf.log[logIndex:]
+	// if rf.isLeader() {
+	// 	log.Printf("Server %v %p (Term: %v) Snapshot: %v, new log length: %v", rf.me, rf, rf.currentTerm, index, len(rf.log))
+	// }
 	rf.snapshot = snapshot
 	rf.persist(snapshot)
 }
@@ -289,6 +299,17 @@ func (rf *Raft) SnapshotWithoutLock(index int, snapshot []byte) {
 		// if the snapshot is outdated
 		return
 	}
+	logIndex := index - rf.getFirstLogIndex()
+	rf.lastIncludedIndex = rf.log[logIndex].Index
+	rf.lastIncludedTerm = rf.log[logIndex].Term
+	rf.log = rf.log[logIndex:]
+	rf.snapshot = snapshot
+	rf.persist(snapshot)
+}
+
+func (rf *Raft) SnapshotLeader(index int, snapshot []byte) {
+	// Your code here (3D).
+	DPrintf("Server %v %p (Term: %v) Snapshot: %v", rf.me, rf, rf.currentTerm, index)
 	logIndex := index - rf.getFirstLogIndex()
 	rf.lastIncludedIndex = rf.log[logIndex].Index
 	rf.lastIncludedTerm = rf.log[logIndex].Term
@@ -712,14 +733,14 @@ func (rf *Raft) stateChange(newState State) {
 		// no change
 		return
 	} else {
-		log.Printf("Server %v %p (Term %v) state change from %v to %v", rf.me, rf, rf.currentTerm, rf.state, newState)
+		DPrintf("Server %v %p (Term %v) state change from %v to %v", rf.me, rf, rf.currentTerm, rf.state, newState)
 	}
 	if newState == leader {
 		// if we become leader
 		if rf.state != candidate {
 			log.Fatalf("Server %v %p (Term %v) Invalid state change to leader from %v", rf.me, rf, rf.currentTerm, rf.state)
 		}
-		log.Printf("Server %v %p (Term %v) become leader", rf.me, rf, rf.currentTerm)
+		DPrintf("Server %v %p (Term %v) become leader", rf.me, rf, rf.currentTerm)
 		rf.state = leader
 		rf.nextIndex = make([]int, len(rf.peers))
 		rf.matchIndex = make([]int, len(rf.peers))

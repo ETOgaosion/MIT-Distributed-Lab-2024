@@ -1,7 +1,6 @@
 package shardctrler
 
 import (
-	"log"
 	"sort"
 	"time"
 
@@ -103,7 +102,7 @@ func (sc *ShardCtrler) Join(args *JoinArgs, reply *JoinReply) {
 	if args.SequenceNum <= sc.clientSequences[args.ClientId] {
 		sc.mu.Unlock()
 		reply.WrongLeader = false
-		reply.Err = ErrWrongLeader
+		reply.Err = OK
 		return
 	}
 	sc.mu.Unlock()
@@ -130,7 +129,7 @@ func (sc *ShardCtrler) Leave(args *LeaveArgs, reply *LeaveReply) {
 	if args.SequenceNum <= sc.clientSequences[args.ClientId] {
 		sc.mu.Unlock()
 		reply.WrongLeader = false
-		reply.Err = ErrWrongLeader
+		reply.Err = OK
 		return
 	}
 	sc.mu.Unlock()
@@ -157,7 +156,7 @@ func (sc *ShardCtrler) Move(args *MoveArgs, reply *MoveReply) {
 	if args.SequenceNum <= sc.clientSequences[args.ClientId] {
 		sc.mu.Unlock()
 		reply.WrongLeader = false
-		reply.Err = ErrWrongLeader
+		reply.Err = OK
 		return
 	}
 	sc.mu.Unlock()
@@ -185,7 +184,7 @@ func (sc *ShardCtrler) Query(args *QueryArgs, reply *QueryReply) {
 	if args.SequenceNum <= sc.clientSequences[args.ClientId] {
 		sc.mu.Unlock()
 		reply.WrongLeader = false
-		reply.Err = ErrWrongLeader
+		reply.Err = OK
 		return
 	}
 	sc.mu.Unlock()
@@ -197,7 +196,7 @@ func (sc *ShardCtrler) Query(args *QueryArgs, reply *QueryReply) {
 	}
 	index, _, isLeader := sc.rf.Start(cmd)
 	if !isLeader {
-		log.Printf("Server %v %p isLeader: %v ErrorWrongLeader", sc.me, sc, sc.isLeader())
+		DPrintf("Server %v %p isLeader: %v ErrorWrongLeader", sc.me, sc, sc.isLeader())
 		reply.WrongLeader = true
 		reply.Err = ErrWrongLeader
 		return

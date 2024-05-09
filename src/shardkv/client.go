@@ -76,7 +76,7 @@ func (ck *Clerk) Get(key string) string {
 					return reply.Value
 				}
 				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrTimeout) {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(ClientRetryInterval)
 					// ask controller for the latest configuration.
 					ck.config = ck.sm.Query(-1)
 					continue
@@ -100,7 +100,7 @@ func (ck *Clerk) Get(key string) string {
 				// ... not ok, or ErrWrongLeader
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(ClientRetryInterval)
 		// ask controller for the latest configuration.
 		ck.config = ck.sm.Query(-1)
 	}
@@ -131,7 +131,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 					return
 				}
 				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrTimeout) {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(ClientRetryInterval)
 					// ask controller for the latest configuration.
 					ck.config = ck.sm.Query(-1)
 					continue
@@ -155,7 +155,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 				// ... not ok, or ErrWrongLeader
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(ClientRetryInterval)
 		// ask controller for the latest configuration.
 		ck.config = ck.sm.Query(-1)
 	}

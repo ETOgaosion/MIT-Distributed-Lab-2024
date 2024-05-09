@@ -23,7 +23,7 @@ type Clerk struct {
 }
 
 const (
-	retryInterval = 300 * time.Microsecond
+	retryInterval = 300 * time.Millisecond
 )
 
 func nrand() int64 {
