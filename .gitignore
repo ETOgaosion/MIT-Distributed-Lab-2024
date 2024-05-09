@@ -12,3 +12,4 @@ mr-*
 tmp/**
 tmp
 raft_copy
+!res/**
