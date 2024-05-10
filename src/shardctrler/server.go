@@ -63,9 +63,8 @@ func (sc *ShardCtrler) GetState(args *GetStateArgs, reply *GetStateReply) {
 	reply.IsLeader = isLeader
 }
 
-func (sc *ShardCtrler) isLeader() bool {
-	_, isLeader := sc.rf.GetState()
-	return isLeader
+func (sc *ShardCtrler) IsLeader() bool {
+	return sc.rf.IsLeader()
 }
 
 // common action for Get, Put, Append, wait for engine extract raft's output and manage with kv storage
@@ -196,7 +195,7 @@ func (sc *ShardCtrler) Query(args *QueryArgs, reply *QueryReply) {
 	}
 	index, _, isLeader := sc.rf.Start(cmd)
 	if !isLeader {
-		DPrintf("Server %v %p isLeader: %v ErrorWrongLeader", sc.me, sc, sc.isLeader())
+		DPrintf("Server %v %p isLeader: %v ErrorWrongLeader", sc.me, sc, sc.IsLeader())
 		reply.WrongLeader = true
 		reply.Err = ErrWrongLeader
 		return

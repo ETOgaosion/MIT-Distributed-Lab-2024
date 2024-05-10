@@ -1,0 +1,51 @@
+Test: one client (4A) ...
+2024/05/10 02:41:18 Iteration 0
+labgob warning: Decoding into a non-default variable/field Err may not work
+2024/05/10 02:41:23 Iteration 1
+2024/05/10 02:41:28 Iteration 2
+  ... Passed --  15.4  5  1207  194
+Test: ops complete fast enough (4A) ...
+2024-05-10 02:41:34.145035305 +0800 CST m=+15.771269209 Append 0
+2024-05-10 02:41:42.035417179 +0800 CST m=+23.661651072 Append 100
+2024-05-10 02:41:49.958903203 +0800 CST m=+31.585137106 Append 200
+2024-05-10 02:41:57.730488664 +0800 CST m=+39.356722558 Append 300
+2024-05-10 02:42:05.195461673 +0800 CST m=+46.821695568 Append 400
+2024-05-10 02:42:12.649057472 +0800 CST m=+54.275291374 Append 500
+2024-05-10 02:42:20.409207917 +0800 CST m=+62.035441821 Append 600
+2024-05-10 02:42:28.158583706 +0800 CST m=+69.784817608 Append 700
+2024-05-10 02:42:35.900712692 +0800 CST m=+77.526946595 Append 800
+2024-05-10 02:42:43.591617336 +0800 CST m=+85.217851239 Append 900
+  ... Passed --  77.6  3  4013    0
+Test: many clients (4A) ...
+2024/05/10 02:42:51 Iteration 0
+2024/05/10 02:42:57 Iteration 1
+2024/05/10 02:43:02 Iteration 2
+  ... Passed --  16.6  5  2637  870
+Test: unreliable net, many clients (4A) ...
+2024/05/10 02:43:08 Iteration 0
+2024/05/10 02:43:15 Iteration 1
+2024/05/10 02:43:22 Iteration 2
+  ... Passed --  23.6  5  2402  195
+Test: concurrent append to same key, unreliable (4A) ...
+  ... Passed --   8.4  3   477   52
+Test: progress in majority (4A) ...
+  ... Passed --   0.7  5    69    2
+Test: no progress in minority (4A) ...
+  ... Passed --   1.3  5   164    3
+Test: completion after heal (4A) ...
+  ... Passed --   1.4  5    83    3
+Test: partitions, one client (4A) ...
+2024/05/10 02:43:44 Iteration 0
+2024/05/10 02:43:52 Iteration 1
+2024/05/10 02:43:59 Iteration 2
+  ... Passed --  23.1  5  1777  155
+Test: partitions, many clients (4A) ...
+2024/05/10 02:44:07 Iteration 0
+2024/05/10 02:44:15 Iteration 1
+2024/05/10 02:44:23 Iteration 2
+  ... Passed --  24.3  5  3338  692
+Test: restarts, one client (4A) ...
+2024/05/10 02:44:31 Iteration 0
+2024/05/10 02:44:38 Iteration 1
+signal: interrupt
+FAIL	6.5840/kvraft	371.467s

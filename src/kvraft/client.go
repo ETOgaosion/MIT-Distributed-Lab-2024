@@ -40,9 +40,9 @@ func (ck *Clerk) GetClientId() int64 {
 
 func (ck *Clerk) GetState() int {
 	for {
-		args := GetStateArgs{}
-		reply := GetStateReply{}
-		ok := ck.servers[ck.leaderId].Call("KVServer.GetState", &args, &reply)
+		args := IsLeaderArgs{}
+		reply := IsLeaderReply{}
+		ok := ck.servers[ck.leaderId].Call("KVServer.IsLeader", &args, &reply)
 		if ok && reply.IsLeader {
 			DPrintf("Client %d GetState from %d", ck.clientId, ck.leaderId)
 			return int(ck.leaderId)

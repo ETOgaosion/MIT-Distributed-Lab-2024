@@ -82,11 +82,8 @@ func (kv *KVServer) waitCmd(cmd Op) OpReply {
 }
 
 // for faster leader recognization
-func (kv *KVServer) GetState(args *GetStateArgs, reply *GetStateReply) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	_, isLeader := kv.rf.GetState()
-	reply.IsLeader = isLeader
+func (kv *KVServer) IsLeader(args *IsLeaderArgs, reply *IsLeaderReply) {
+	reply.IsLeader = kv.rf.IsLeader()
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {

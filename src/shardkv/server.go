@@ -59,13 +59,13 @@ type ShardKV struct {
 	shardStates map[int]int8
 
 	persister *raft.Persister
+	snapshotIndex int
 }
 
 // for faster leader recognization
 // should be in lock
 func (kv *ShardKV) isLeader() bool {
-	_, isLeader := kv.rf.GetState()
-	return isLeader
+	return kv.rf.IsLeader()
 }
 
 // common action for Get, Put, Append, wait for engine extract raft's output and manage with kv storage
@@ -627,14 +627,8 @@ func (kv *ShardKV) engineStart() {
 			if ok {
 				ch <- res
 			}
-			if kv.maxraftstate > 0 && kv.persister.RaftStateSize() > kv.maxraftstate {
-				D2Printf("Server %v %p gid: %d (isLeader: %v) start snapshot, raft state size: %v", kv.me, kv, kv.gid, kv.isLeader(), kv.persister.RaftStateSize())
-				snapshot := kv.getSnapShot()
-				kv.mu.Unlock()
-				kv.rf.Snapshot(msg.CommandIndex, snapshot)
-			} else {
-				kv.mu.Unlock()
-			}
+			kv.snapshotIndex = msg.CommandIndex
+			kv.mu.Unlock()
 		} else if msg.SnapshotValid {
 			kv.mu.Lock()
 			kv.readSnapShot(msg.Snapshot)
@@ -733,17 +727,46 @@ func (kv *ShardKV) sendShards() {
 	}
 }
 
+// go routine
 // check empty term thread
 func (kv *ShardKV) checkEmptyTerm() {
 	for !kv.killed() {
+		kv.mu.Lock()
 		if !kv.isLeader() {
+			kv.mu.Unlock()
 			time.Sleep(EmptyTermCheckInterval)
 			continue
 		}
 		if !kv.rf.CheckEmptyTermLog() {
+			D2Printf("Server %v %p gid: %d (isLeader: %v) start empty term log", kv.me, kv, kv.gid, kv.isLeader())
+			kv.mu.Unlock()
 			kv.rf.Start(EmptyOp{})
+		} else {
+			kv.mu.Unlock()
 		}
 		time.Sleep(EmptyTermCheckInterval)
+	}
+}
+
+// go routine
+func (kv *ShardKV) snapshotThread() {
+	for !kv.killed() {
+		kv.mu.Lock()
+		if kv.maxraftstate > 0 && kv.persister.RaftStateSize() > kv.maxraftstate {
+			if kv.snapshotIndex == 0 {
+				kv.mu.Unlock()
+				time.Sleep(SnapshotInterval)
+				continue
+			}
+			D2Printf("Server %v %p gid: %d (isLeader: %v) start snapshot, index: %v, raft state size: %v", kv.me, kv, kv.gid, kv.isLeader(), kv.snapshotIndex, kv.persister.RaftStateSize())
+			snapshot := kv.getSnapShot()
+			index := kv.snapshotIndex
+			kv.mu.Unlock()
+			kv.rf.Snapshot(index, snapshot)
+		} else {
+			kv.mu.Unlock()
+		}
+		time.Sleep(SnapshotInterval)
 	}
 }
 
@@ -808,12 +831,15 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
+	kv.snapshotIndex = 0
+
 	kv.readSnapShot(persister.ReadSnapshot())
 
 	go kv.engineStart()
 	go kv.syncConfig()
 	go kv.sendShards()
 	go kv.checkEmptyTerm()
+	go kv.snapshotThread()
 
 	return kv
 }

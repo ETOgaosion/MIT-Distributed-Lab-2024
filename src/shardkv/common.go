@@ -106,6 +106,7 @@ const (
 	UpdateConfigInterval = 100 * time.Millisecond
 	InstallShardsInterval = 300 * time.Millisecond
 	EmptyTermCheckInterval = 300 * time.Millisecond
+	SnapshotInterval = 300 * time.Millisecond
 )
 
 type EmptyOp struct {

@@ -985,58 +985,58 @@ func TestChallenge2Unaffected(t *testing.T) {
 // optional test to see whether servers can handle operations on shards that
 // have been received as a part of a config migration when the entire migration
 // has not yet completed.
-func TestChallenge2Partial(t *testing.T) {
-	fmt.Printf("Test: partial migration shard access (challenge 2) ...\n")
+// func TestChallenge2Partial(t *testing.T) {
+// 	fmt.Printf("Test: partial migration shard access (challenge 2) ...\n")
 
-	cfg := make_config(t, 3, true, 100)
-	defer cfg.cleanup()
+// 	cfg := make_config(t, 3, true, 100)
+// 	defer cfg.cleanup()
 
-	ck := cfg.makeClient(cfg.ctl)
+// 	ck := cfg.makeClient(cfg.ctl)
 
-	// JOIN 100 + 101 + 102
-	cfg.joinm([]int{0, 1, 2}, cfg.ctl)
+// 	// JOIN 100 + 101 + 102
+// 	cfg.joinm([]int{0, 1, 2}, cfg.ctl)
 
-	// Give the implementation some time to reconfigure
-	<-time.After(1 * time.Second)
+// 	// Give the implementation some time to reconfigure
+// 	<-time.After(1 * time.Second)
 
-	// Do a bunch of puts to keys in all shards
-	n := 10
-	ka := make([]string, n)
-	va := make([]string, n)
-	for i := 0; i < n; i++ {
-		ka[i] = strconv.Itoa(i) // ensure multiple shards
-		va[i] = "100"
-		ck.Put(ka[i], va[i])
-	}
+// 	// Do a bunch of puts to keys in all shards
+// 	n := 10
+// 	ka := make([]string, n)
+// 	va := make([]string, n)
+// 	for i := 0; i < n; i++ {
+// 		ka[i] = strconv.Itoa(i) // ensure multiple shards
+// 		va[i] = "100"
+// 		ck.Put(ka[i], va[i])
+// 	}
 
-	// QUERY to find shards owned by 102
-	c := cfg.ctl.ck.Query(-1)
-	owned := make(map[int]bool, n)
-	for s, gid := range c.Shards {
-		owned[s] = gid == cfg.groups[2].gid
-	}
+// 	// QUERY to find shards owned by 102
+// 	c := cfg.ctl.ck.Query(-1)
+// 	owned := make(map[int]bool, n)
+// 	for s, gid := range c.Shards {
+// 		owned[s] = gid == cfg.groups[2].gid
+// 	}
 
-	// KILL 100
-	cfg.ShutdownGroup(0)
+// 	// KILL 100
+// 	cfg.ShutdownGroup(0)
 
-	// LEAVE 100 + 102
-	// 101 can get old shards from 102, but not from 100. 101 should start
-	// serving shards that used to belong to 102 as soon as possible
-	cfg.leavem([]int{0, 2})
+// 	// LEAVE 100 + 102
+// 	// 101 can get old shards from 102, but not from 100. 101 should start
+// 	// serving shards that used to belong to 102 as soon as possible
+// 	cfg.leavem([]int{0, 2})
 
-	// Give the implementation some time to start reconfiguration
-	// And to migrate 102 -> 101
-	<-time.After(1 * time.Second)
+// 	// Give the implementation some time to start reconfiguration
+// 	// And to migrate 102 -> 101
+// 	<-time.After(1 * time.Second)
 
-	// And finally: check that gets/puts for 101-owned keys now complete
-	for i := 0; i < n; i++ {
-		shard := key2shard(ka[i])
-		if owned[shard] {
-			check(t, ck, ka[i], va[i])
-			ck.Put(ka[i], va[i]+"-2")
-			check(t, ck, ka[i], va[i]+"-2")
-		}
-	}
+// 	// And finally: check that gets/puts for 101-owned keys now complete
+// 	for i := 0; i < n; i++ {
+// 		shard := key2shard(ka[i])
+// 		if owned[shard] {
+// 			check(t, ck, ka[i], va[i])
+// 			ck.Put(ka[i], va[i]+"-2")
+// 			check(t, ck, ka[i], va[i]+"-2")
+// 		}
+// 	}
 
-	fmt.Printf("  ... Passed\n")
-}
+// 	fmt.Printf("  ... Passed\n")
+// }

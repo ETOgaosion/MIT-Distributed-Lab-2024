@@ -38,10 +38,10 @@ type GetReply struct {
 	Value string
 }
 
-type GetStateArgs struct {
+type IsLeaderArgs struct {
 }
 
-type GetStateReply struct {
+type IsLeaderReply struct {
 	IsLeader bool
 }
 

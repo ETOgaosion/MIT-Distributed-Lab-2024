@@ -75,7 +75,7 @@ func (ck *Clerk) Get(key string) string {
 					ck.sequenceNum++
 					return reply.Value
 				}
-				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrTimeout) {
+				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrShardNotReady || reply.Err == ErrTimeout) {
 					time.Sleep(ClientRetryInterval)
 					// ask controller for the latest configuration.
 					ck.config = ck.sm.Query(-1)
@@ -93,7 +93,7 @@ func (ck *Clerk) Get(key string) string {
 					ck.sequenceNum++
 					return reply.Value
 				}
-				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrTimeout) {
+				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrShardNotReady  || reply.Err == ErrTimeout) {
 					break
 				}
 				ck.leaderIds[gid] = (ck.leaderIds[gid] + 1) % int64(len(servers))
@@ -130,7 +130,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 					ck.sequenceNum++
 					return
 				}
-				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrTimeout) {
+				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrShardNotReady  || reply.Err == ErrTimeout) {
 					time.Sleep(ClientRetryInterval)
 					// ask controller for the latest configuration.
 					ck.config = ck.sm.Query(-1)
@@ -148,7 +148,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 					ck.sequenceNum++
 					return
 				}
-				if ok && reply.Err == ErrWrongGroup {
+				if ok && (reply.Err == ErrWrongGroup || reply.Err == ErrShardNotReady  || reply.Err == ErrTimeout) {
 					break
 				}
 				ck.leaderIds[gid] = (ck.leaderIds[gid] + 1) % int64(len(servers))

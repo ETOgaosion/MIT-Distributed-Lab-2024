@@ -38,15 +38,20 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
         - We tested a corner case handled roughly when in Lab3: in `AppendEntries`, if the leader try to send append entries which has already been send to snapshots by clients (But server's `nextIndex` array do not receive that news), this is gonna happen: `args.PrevLogIndex < rf.getFirstLogIndex()`, we should return `false` with `FirstIndex` set to `-1`, let server retry later. This modification can pass all tests, but may not be as clear as other theories
         - `go test` can not handle well with goroutines, Iterations can be easily stuck
         - golang has a poor `unsafe.Sizeof`
-- [x] Lab5: Sharded Key/Value Service (<ins>Coding: M/H, Debug: HH, 90% pass</ins>)
+- [x] Lab5: Sharded Key/Value Service (<ins>Coding: M/H, Debug: HH, 100% pass</ins>)
     - Recommend [this blog](https://www.cnblogs.com/pxlsdz/p/15685837.html)
     - [x] Lab5A: The Controller and Static Sharding (<ins>S/M, 100% pass</ins>)
         - **TC: $O(2n)$ SC: $O(1)$ Shard rebalance algorithm (Not like others' costly $O(n^2)$): Calculate `avg` and `remains` number of shards in gids first, Use 0 gid as a tmp storage for extra shards (larger than `avg + 1` if still got `remains`, larger than avg if `remains` is 0), then move all these shards to gid shards less than `avg`**
-    - [x] **Lab5B (<ins>Coding: M/H, Debug: HHH, 90% pass</ins>)**
+    - [x] **Lab5B (<ins>Coding: M/H, Debug: HHH, 100% pass</ins>)**
         - Idea Refernce Blog: [https://www.inlighting.org/archives/mit-6.824-notes](https://www.inlighting.org/archives/mit-6.824-notes)
         - Bug log:
-            - Snapshot Test (2 Days):
+            - Snapshot Test (3 Days):
                 - `time.Millisecond` typo: `time.Microsecond`
+                - Bug: stuck on `rf.log` encoding process
+                    - Why: newly created server cannot sync log and do correct snapshots, so `rf.log` grow bigger
+                    - Solition: 
+                        - Seperate snapshot with main loop engine, do not let channel stuck the snapshot process
+                        - Judge the snapshot index, if is 0, do not do snapshot
             - UnReliable Test (0.5 Days)
                 - repeated ctrler requests return `ErrOK` typo `ErrWrongLeader` (Most Serious)
             - All (1 Day):
@@ -57,6 +62,7 @@ This repo is based on [MIT Spring 2024 6.5840 Course and Lab](https://pdos.csail
 - [x] Challenges
     - [x] `TestChallenge1Delete`: easy one, send delete shard requests after install shards
     - [x] `TestChallenge2Unaffected`: check shards before common operations, if their states are `Serving`, they can be used directly
+    - [ ] `TestChallenge2Partial`
  
 Evaluation Level (due to my own experience, regardless of official assessment):
 

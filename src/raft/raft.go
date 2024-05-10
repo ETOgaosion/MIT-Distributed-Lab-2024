@@ -128,7 +128,9 @@ func (rf *Raft) GetState() (int, bool) {
 	return term, isleader
 }
 
-func (rf *Raft) isLeader() bool {
+func (rf *Raft) IsLeader() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	return rf.state == leader
 }
 
@@ -281,13 +283,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	logIndex := index - rf.getFirstLogIndex()
 	rf.lastIncludedIndex = rf.log[logIndex].Index
 	rf.lastIncludedTerm = rf.log[logIndex].Term
-	// if rf.isLeader() {
-	// 	log.Printf("Server %v %p (Term: %v) Snapshot: %v, raw log length: %v", rf.me, rf, rf.currentTerm, index, len(rf.log))
-	// }
 	rf.log = rf.log[logIndex:]
-	// if rf.isLeader() {
-	// 	log.Printf("Server %v %p (Term: %v) Snapshot: %v, new log length: %v", rf.me, rf, rf.currentTerm, index, len(rf.log))
-	// }
 	rf.snapshot = snapshot
 	rf.persist(snapshot)
 }
@@ -707,7 +703,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) CheckEmptyTermLog() bool {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	if rf.currentTerm == rf.getLastLogTerm() {
+	if len(rf.log) < 1 || rf.currentTerm == rf.getLastLogTerm() {
 		return true
 	} else {
 		// log.Printf("Server %v %p (Term: %v) CheckEmptyTermLog: %v %v", rf.me, rf, rf.currentTerm, rf.currentTerm, rf.getLastLogTerm())
